@@ -13,20 +13,42 @@ Covenant Code of Conduct][contributor-covenant].
 
 **TL;DR:** Use `nix develop`, but you may be able to scrape by with `cargo`.
 
+### Quick Start Commands
+
+You can use either `cargo` commands directly or use the provided `justfile` recipes (requires [just](https://github.com/casey/just)):
+
+```bash
+# Build the project
+just build                     # Or: cargo build
+cargo build --release          # Build optimized release version
+
+# Run tests
+just test                      # Or: cargo nextest run (preferred, faster)
+cargo test                     # Alternative: Run tests with standard cargo test
+
+# Code quality
+just lint                      # Or: cargo clippy
+just format                    # Or: cargo fmt
+cargo check                    # Check compilation without building
+
+# Documentation
+just api-docs                  # Or: cargo doc --document-private-items --no-deps --workspace
+just docs                      # Build user manual (requires mdbook)
+just serve-docs                # Serve user manual on http://localhost:3000
+```
+
+### Setup Requirements
+
 A standard [Rust installation][rustup] with `cargo` is sufficient to build
 ghciwatch. If you're new to Rust, check out [Rust for
 Haskellers][rust-for-haskellers].
 
 [rust-for-haskellers]: https://becca.ooo/blog/rust-for-haskellers/
 
-To run tests, you'll need [Nix/Lix][lix] installed. Run `nix
+To run the full test suite (including integration tests), you'll need [Nix/Lix][lix] installed. Run `nix
 develop` to enter a [development shell][dev-env] with all the dependencies
-available and then use `cargo nextest run` to run the tests (including the
-integration tests) with [`cargo-nextest`][nextest]. (`cargo test` will work,
+available and then use `cargo nextest run` to run the tests with [`cargo-nextest`][nextest]. (`cargo test` will work,
 too, but slower.) 
-
-You can run the tests with coverage output with `cargo llvm-cov nextest`.
-it is [possible to display coverage][coverage-vscode] information in VSCode, with `cargo llvm-cov --lcov --output-path lcov.info`.
 
 [rustup]: https://rustup.rs/
 [lix]: https://lix.systems/
