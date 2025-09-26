@@ -1021,16 +1021,6 @@ impl Ghci {
         }
     }
 
-    /// Display all tracked warnings to the user with GHC-matching colors.
-    #[instrument(skip_all, level = "trace")]
-    async fn display_tracked_warnings(&self) {
-        // Single iteration - no need to check has_warnings() first
-        for file_warnings in self.warning_tracker.get_all_warnings().values() {
-            for warning in file_warnings {
-                warning.display_colored();
-            }
-        }
-    }
 
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {

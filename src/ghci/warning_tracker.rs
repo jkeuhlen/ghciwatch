@@ -117,10 +117,6 @@ impl WarningTracker {
         self.warnings.values().map(|w| w.len()).sum()
     }
 
-    /// Check if there are any warnings tracked.
-    pub fn has_warnings(&self) -> bool {
-        !self.warnings.is_empty()
-    }
 }
 
 impl Default for WarningTracker {
