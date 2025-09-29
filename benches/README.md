@@ -23,6 +23,22 @@ cargo bench --bench ghci_parsing -- --warm-up-time 5 --measurement-time 10 --sam
 cargo bench --bench file_events -- --quick
 ```
 
+### Baseline Management
+
+```bash
+# Save current results as a named baseline
+cargo bench -- --save-baseline my-feature
+
+# Compare against a named baseline
+cargo bench -- --baseline my-feature
+
+# Compare against the default baseline
+cargo bench  # Automatically compares to 'base' if it exists
+
+# Discard results (don't update baseline)
+cargo bench -- --discard-baseline
+```
+
 ### Run specific benchmark suite
 ```bash
 cargo bench --bench ghci_parsing
@@ -42,7 +58,11 @@ cargo bench --bench ghci_parsing -- parse_ghc_messages
 cargo bench -- --output-format bencher
 ```
 
-Reports are saved to `target/criterion/` with interactive HTML graphs.
+Reports and benchmark data are saved to `target/criterion/`:
+- Raw measurement data in JSON format for comparisons
+- Statistical analysis with confidence intervals
+- Interactive HTML reports at `target/criterion/{benchmark}/report/index.html`
+- Baseline data preserved between runs for automatic change detection (+/- percentages)
 
 ## Benchmark Suites
 
