@@ -31,6 +31,11 @@ just lint                      # Or: cargo clippy
 just format                    # Or: cargo fmt
 cargo check                    # Check compilation without building
 
+# Performance benchmarks
+cargo bench                    # Run all benchmarks
+cargo bench --bench ghci_parsing  # Run specific benchmark suite
+cargo bench -- --quick         # Quick benchmark run for testing
+
 # Documentation
 just api-docs                  # Or: cargo doc --document-private-items --no-deps --workspace
 just docs                      # Build user manual (requires mdbook)
@@ -55,6 +60,37 @@ too, but slower.)
 [dev-env]: https://zero-to-nix.com/concepts/dev-env
 [nextest]: https://nexte.st/
 [coverage-vscode]: https://github.com/taiki-e/cargo-llvm-cov?tab=readme-ov-file#display-coverage-in-vs-code
+
+## Performance Benchmarks
+
+ghciwatch includes a comprehensive benchmark suite to track performance and prevent regressions.
+The benchmarks cover critical paths including GHCi output parsing, file event processing,
+and incremental reading. See the [benchmark documentation](benches/README.md) for details.
+
+### Running Benchmarks
+
+```bash
+# Run all benchmarks
+cargo bench
+
+# Run a specific benchmark suite
+cargo bench --bench ghci_parsing
+cargo bench --bench incremental_reader
+cargo bench --bench file_events
+cargo bench --bench eval_parsing
+cargo bench --bench tui_rendering
+
+# Run benchmarks with custom parameters
+cargo bench -- --warm-up-time 1 --measurement-time 2
+
+# Compare against a baseline
+cargo bench -- --save-baseline main
+# Make changes...
+cargo bench -- --baseline main
+```
+
+Benchmark results are saved to `target/criterion/` with interactive HTML reports.
+The CI automatically runs benchmarks on pull requests to detect performance regressions.
 
 ## Running the test suite without Nix
 

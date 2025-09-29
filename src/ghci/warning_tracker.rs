@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn test_new_tracker_is_empty() {
         let tracker = WarningTracker::new();
-        assert!(!tracker.has_warnings());
+        assert!(tracker.get_all_warnings().is_empty());
         assert_eq!(tracker.warning_count(), 0);
         assert_eq!(tracker.warnings.len(), 0);
     }
@@ -221,7 +221,7 @@ mod tests {
         tracker.update_warnings_from_log(&log);
 
         // Warnings should be cleared since file was directly changed and has no new warnings
-        assert!(!tracker.has_warnings());
+        assert!(tracker.get_all_warnings().is_empty());
     }
 
     #[test]
@@ -250,7 +250,7 @@ mod tests {
         tracker.update_warnings_from_log(&log);
 
         // Warnings should be kept since file was recompiled due to dependencies
-        assert!(tracker.has_warnings());
+        assert!(!tracker.get_all_warnings().is_empty());
         assert_eq!(tracker.warning_count(), 1);
     }
 
@@ -270,7 +270,7 @@ mod tests {
         tracker.update_warnings_from_log(&log);
 
         // Should handle diagnostics without paths gracefully
-        assert!(!tracker.has_warnings());
+        assert!(tracker.get_all_warnings().is_empty());
     }
 
     #[test]
