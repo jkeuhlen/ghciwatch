@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use clap::builder::StringValueParser;
 use clap::builder::TypedValueParser;
-use clap::builder::ValueParserFactory;
 use humantime::DurationError;
 use miette::LabeledSpan;
 use miette::MietteDiagnostic;
@@ -75,15 +74,5 @@ impl TypedValueParser for DurationValueParser {
                 value_validation_error(arg, &str_value, format!("{diagnostic:?}"))
             })
         })
-    }
-}
-
-struct DurationValueParserFactory;
-
-impl ValueParserFactory for DurationValueParserFactory {
-    type Parser = DurationValueParser;
-
-    fn value_parser() -> Self::Parser {
-        Self::Parser::default()
     }
 }
