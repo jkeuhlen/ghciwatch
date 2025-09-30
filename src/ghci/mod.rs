@@ -615,14 +615,32 @@ impl Ghci {
     }
 
     /// Refresh the listing of targets by parsing the `:show paths` and `:show targets` output.
+    /// For multi-component sessions, we try `:show modules` first to get absolute paths.
     #[instrument(skip_all, level = "debug")]
     async fn refresh_targets(&mut self) -> miette::Result<()> {
         self.refresh_paths().await?;
-        self.targets = self
+        
+        // Try to use :show modules first (better for multi-component sessions)
+        // If it fails, fall back to :show targets
+        match self
             .stdin
-            .show_targets(&mut self.stdout, &self.search_paths)
-            .await?;
-        tracing::debug!(targets = self.targets.len(), "Parsed targets");
+            .show_modules(&mut self.stdout, &self.search_paths)
+            .await
+        {
+            Ok(modules) => {
+                self.targets = modules;
+                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show modules");
+            }
+            Err(err) => {
+                tracing::debug!(?err, "Failed to parse :show modules, falling back to :show targets");
+                self.targets = self
+                    .stdin
+                    .show_targets(&mut self.stdout, &self.search_paths)
+                    .await?;
+                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show targets");
+            }
+        }
+        
         Ok(())
     }
 

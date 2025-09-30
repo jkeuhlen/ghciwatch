@@ -45,6 +45,28 @@ Haskellers][rust-for-haskellers].
 
 [rust-for-haskellers]: https://becca.ooo/blog/rust-for-haskellers/
 
+### Manual Testing
+
+To manually test ghciwatch during development:
+
+```bash
+# Build the release binary
+cargo build --release
+
+# Test with example projects in tests/data/
+cd tests/data/simple
+hpack  # Generate .cabal file from package.yaml if needed
+../../../target/release/ghciwatch
+
+# Or create your own test setup
+mkdir -p /tmp/ghciwatch-test
+cd /tmp/ghciwatch-test
+echo 'main = putStrLn "Hello!"' > Main.hs
+/path/to/ghciwatch/target/release/ghciwatch
+```
+
+Then modify the Haskell files to see ghciwatch automatically reload. The `tests/data/` directory contains various example projects (simple, cabal-project, hpack-project) for testing different configurations.
+
 To run the full test suite (including integration tests), you'll need [Nix/Lix][lix] installed. Run `nix
 develop` to enter a [development shell][dev-env] with all the dependencies
 available and then use `cargo nextest run` to run the tests with [`cargo-nextest`][nextest]. (`cargo test` will work,
