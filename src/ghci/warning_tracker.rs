@@ -117,6 +117,12 @@ impl WarningTracker {
         self.warnings.values().map(|w| w.len()).sum()
     }
 
+    /// Check if there are any warnings.
+    #[allow(dead_code)]
+    pub fn has_warnings(&self) -> bool {
+        self.warning_count() > 0
+    }
+
 }
 
 impl Default for WarningTracker {
