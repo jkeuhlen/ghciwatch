@@ -1,5 +1,6 @@
 packages: my-simple-package.cabal
 offline: True
 flags: +local-dev
+multi-repl: True
 package *
   ghc-options: -fdiagnostics-color=always
