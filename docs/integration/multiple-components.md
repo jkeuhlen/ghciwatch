@@ -6,8 +6,14 @@ Starting with Cabal 3.12 and GHC 9.4, you can use the `--enable-multi-repl` flag
 multiple components in a single GHCi session. ghciwatch now fully supports this feature:
 
 ```bash
-ghciwatch --command "cabal repl --enable-multi-repl lib:mylib test:mytest"
+ghciwatch --command "cabal repl --enable-multi-repl lib:mylib test:mytest" \
+          --watch src \
+          --watch test \
+          --watch app
 ```
+
+**Important**: When using multi-repl with multiple components, you must specify `--watch` 
+flags for all directories containing source files. By default, ghciwatch only watches `src`.
 
 This allows you to:
 - Load multiple libraries, executables, and test suites in one session
@@ -19,6 +25,12 @@ To enable multi-repl by default, add this to your `~/.cabal/config` or project's
 ```cabal
 multi-repl: True
 ```
+
+### Note on Duplicate Modules
+
+If you have overlapping components (like `test-dev` that includes both library and test sources),
+you may see modules being compiled multiple times in the GHCi output. This is normal behavior
+when multiple components include the same source files.
 
 ## The test-dev Trick (Legacy Workaround)
 
