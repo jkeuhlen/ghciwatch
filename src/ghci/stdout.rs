@@ -13,6 +13,7 @@ use crate::incremental_reader::ReadOpts;
 use crate::incremental_reader::WriteBehavior;
 
 use super::parse::parse_ghc_messages;
+use super::parse::parse_show_modules;
 use super::parse::parse_show_paths;
 use super::parse::parse_show_targets;
 use super::parse::ShowPaths;
@@ -124,6 +125,20 @@ impl GhciStdout {
             })
             .await?;
         parse_show_targets(search_paths, &lines).wrap_err("Failed to parse `:show targets` output")
+    }
+
+    #[instrument(skip_all, level = "debug")]
+    pub async fn show_modules(&mut self, search_paths: &ShowPaths) -> miette::Result<ModuleSet> {
+        let lines = self
+            .reader
+            .read_until(&mut ReadOpts {
+                end_marker: &self.prompt_patterns,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut self.buffer,
+            })
+            .await?;
+        parse_show_modules(search_paths, &lines).wrap_err("Failed to parse `:show modules` output")
     }
 
     #[allow(dead_code)] // TODO: No it should not be!

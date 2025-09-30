@@ -1,6 +1,28 @@
 # Multiple Cabal components
 
-Currently, multiple Cabal components don't work. You can work around this with
+## Using Cabal Multi-Repl (Recommended)
+
+Starting with Cabal 3.12 and GHC 9.4, you can use the `--enable-multi-repl` flag to load
+multiple components in a single GHCi session. ghciwatch now fully supports this feature:
+
+```bash
+ghciwatch --command "cabal repl --enable-multi-repl lib:mylib test:mytest"
+```
+
+This allows you to:
+- Load multiple libraries, executables, and test suites in one session
+- Watch and reload files from all loaded components
+- Avoid the complexity of the `test-dev` trick described below
+
+To enable multi-repl by default, add this to your `~/.cabal/config` or project's `cabal.project`:
+
+```cabal
+multi-repl: True
+```
+
+## The test-dev Trick (Legacy Workaround)
+
+If you're using an older version of Cabal or GHC that doesn't support multi-repl, you can use
 [the Cabal `test-dev` trick][test-dev] as described by the venerable Jade
 Lovelace. This works by defining a new component in our `.cabal` file which
 includes the sources from the library and the tests, which has the added
