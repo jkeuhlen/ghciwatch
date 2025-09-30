@@ -1021,7 +1021,6 @@ impl Ghci {
         }
     }
 
-
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
         if self.opts.track_warnings {
