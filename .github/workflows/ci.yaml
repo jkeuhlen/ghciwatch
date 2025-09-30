@@ -122,8 +122,8 @@ jobs:
         run: |
           msrv=$(grep -E "^rust-version" Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
           if [ -z "$msrv" ]; then
-            echo "No MSRV found, using 1.72"
-            msrv="1.72"
+            echo "No MSRV found, using 1.78.0 (minimum for lock file v4)"
+            msrv="1.78.0"
           fi
           echo "msrv=$msrv" >> $GITHUB_OUTPUT
       - uses: dtolnay/rust-toolchain@master
