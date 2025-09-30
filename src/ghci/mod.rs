@@ -619,7 +619,7 @@ impl Ghci {
     #[instrument(skip_all, level = "debug")]
     async fn refresh_targets(&mut self) -> miette::Result<()> {
         self.refresh_paths().await?;
-        
+
         // Try to use :show modules first (better for multi-component sessions)
         // If it fails, fall back to :show targets
         match self
@@ -629,18 +629,27 @@ impl Ghci {
         {
             Ok(modules) => {
                 self.targets = modules;
-                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show modules");
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show modules"
+                );
             }
             Err(err) => {
-                tracing::debug!(?err, "Failed to parse :show modules, falling back to :show targets");
+                tracing::debug!(
+                    ?err,
+                    "Failed to parse :show modules, falling back to :show targets"
+                );
                 self.targets = self
                     .stdin
                     .show_targets(&mut self.stdout, &self.search_paths)
                     .await?;
-                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show targets");
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show targets"
+                );
             }
         }
-        
+
         Ok(())
     }
 
