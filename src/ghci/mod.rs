@@ -450,6 +450,9 @@ impl Ghci {
                     needs_reload.push(path);
                 } else {
                     // Otherwise we need to `:add` the new paths.
+                    // Note: This can cause issues with modules that failed to compile initially
+                    // due to GHC bug #13254, but a proper fix requires tracking all modules
+                    // attempted during initial load.
                     tracing::debug!(%path, "Needs add");
                     needs_add.push(path);
                 }
