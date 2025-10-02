@@ -10,6 +10,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  GHC_VERSIONS: "9.4.8 9.6.6 9.8.4 9.10.1"
 
 jobs:
   # Check code formatting
