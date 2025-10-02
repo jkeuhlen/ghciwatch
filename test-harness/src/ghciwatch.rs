@@ -625,7 +625,7 @@ impl GhciWatch {
         let child = crate::internal::take_ghciwatch_process()?;
         #[cfg(windows)]
         let mut child = crate::internal::take_ghciwatch_process()?;
-        
+
         #[cfg(unix)]
         crate::internal::send_signal(&child, nix::sys::signal::Signal::SIGINT)?;
         #[cfg(windows)]

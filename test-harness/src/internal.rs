@@ -244,7 +244,7 @@ pub(crate) fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
 /// On Windows, we can't send Unix signals, so this is a no-op.
 #[cfg(windows)]
 pub(crate) fn send_signal(child: &Child, _signal: ()) -> miette::Result<()> {
-    // On Windows, we can't send Unix signals. 
+    // On Windows, we can't send Unix signals.
     // The process will be terminated with kill() if needed.
     Ok(())
 }
