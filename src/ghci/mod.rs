@@ -374,7 +374,7 @@ impl Ghci {
         self.stdin.initialize(&mut self.stdout, log).await?;
 
         // Get the initial list of targets.
-        self.refresh_targets().await?;
+        self.refresh_targets_with_log(Some(log)).await?;
         // Get the initial list of eval commands.
         self.refresh_eval_commands().await?;
 
@@ -614,34 +614,152 @@ impl Ghci {
         Ok(())
     }
 
-    /// Refresh the listing of targets by parsing the `:show paths` and `:show targets` output.
-    /// For multi-component sessions, we try `:show modules` first to get absolute paths.
+    /// Refresh targets with optional compilation log for fallback.
     #[instrument(skip_all, level = "debug")]
-    async fn refresh_targets(&mut self) -> miette::Result<()> {
+    async fn refresh_targets_with_log(
+        &mut self,
+        log: Option<&CompilationLog>,
+    ) -> miette::Result<()> {
         self.refresh_paths().await?;
-        
+
         // Try to use :show modules first (better for multi-component sessions)
-        // If it fails, fall back to :show targets
+        // If it fails or returns empty (e.g., when modules fail to compile), fall back to :show targets
         match self
             .stdin
             .show_modules(&mut self.stdout, &self.search_paths)
             .await
         {
-            Ok(modules) => {
+            Ok(modules) if modules.len() > 0 => {
                 self.targets = modules;
-                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show modules");
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show modules"
+                );
+
+                // Even when :show modules succeeds, also add failed modules from diagnostics
+                // because they won't appear in the modules list. Only do this if there are
+                // actual error diagnostics (not just successful compilation).
+                if let Some(log) = log {
+                    if !log.diagnostics.is_empty() {
+                        let initial_count = self.targets.len();
+                        self.populate_targets_from_diagnostics(log);
+                        if self.targets.len() > initial_count {
+                            tracing::debug!(
+                                "Added {} failed modules from diagnostics",
+                                self.targets.len() - initial_count
+                            );
+                        }
+                    }
+                }
             }
-            Err(err) => {
-                tracing::debug!(?err, "Failed to parse :show modules, falling back to :show targets");
+            Ok(_) => {
+                tracing::debug!(
+                    "Got empty result from :show modules, falling back to :show targets"
+                );
                 self.targets = self
                     .stdin
                     .show_targets(&mut self.stdout, &self.search_paths)
                     .await?;
-                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show targets");
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show targets"
+                );
+
+                // When using :show targets, also add failed modules from diagnostics
+                // because they won't appear in the targets list
+                if let Some(log) = log {
+                    let initial_count = self.targets.len();
+                    self.populate_targets_from_diagnostics(log);
+                    if self.targets.len() > initial_count {
+                        tracing::debug!(
+                            "Added {} failed modules from diagnostics",
+                            self.targets.len() - initial_count
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::debug!(
+                    ?err,
+                    "Failed to parse :show modules, falling back to :show targets"
+                );
+                self.targets = self
+                    .stdin
+                    .show_targets(&mut self.stdout, &self.search_paths)
+                    .await?;
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show targets"
+                );
+
+                // When using :show targets, also add failed modules from diagnostics
+                // because they won't appear in the targets list
+                if let Some(log) = log {
+                    let initial_count = self.targets.len();
+                    self.populate_targets_from_diagnostics(log);
+                    if self.targets.len() > initial_count {
+                        tracing::debug!(
+                            "Added {} failed modules from diagnostics",
+                            self.targets.len() - initial_count
+                        );
+                    }
+                }
             }
         }
-        
+
         Ok(())
+    }
+
+    /// Populate targets from compilation diagnostics when :show commands return empty or incomplete.
+    /// This helps with cabal component sessions where failed modules aren't listed.
+    /// Only adds modules that aren't already tracked to preserve existing module information.
+    fn populate_targets_from_diagnostics(&mut self, log: &CompilationLog) {
+        use std::collections::HashSet;
+        let mut paths_added = HashSet::new();
+
+        tracing::debug!(
+            diagnostics_count = log.diagnostics.len(),
+            compiled_modules_count = log.compiled_modules.len(),
+            "populate_targets_from_diagnostics called"
+        );
+
+        // Extract paths from error diagnostics (these are the failed modules)
+        for diagnostic in &log.diagnostics {
+            if let Some(path) = &diagnostic.path {
+                if let Ok(normal_path) = NormalPath::new(path.clone(), &self.search_paths.cwd) {
+                    // Only add if not already in targets
+                    if !self.targets.contains_source_path(&normal_path) {
+                        tracing::debug!("Adding failed module from diagnostics: {}", path);
+                        if paths_added.insert(normal_path.clone()) {
+                            let module = LoadedModule::new(normal_path);
+                            self.targets.insert_module(module);
+                        }
+                    } else {
+                        tracing::debug!("Module {} already in targets", path);
+                    }
+                }
+            }
+        }
+
+        // Also add successfully compiled modules if not already present
+        for module in &log.compiled_modules {
+            if let Ok(normal_path) = NormalPath::new(module.path.clone(), &self.search_paths.cwd) {
+                if !self.targets.contains_source_path(&normal_path) {
+                    tracing::debug!("Adding compiled module: {}", module.path);
+                    if paths_added.insert(normal_path.clone()) {
+                        let module = LoadedModule::with_name(normal_path, module.name.clone());
+                        self.targets.insert_module(module);
+                    }
+                } else {
+                    tracing::debug!("Module {} already in targets", module.path);
+                }
+            }
+        }
+
+        tracing::debug!(
+            "populate_targets_from_diagnostics added {} modules",
+            paths_added.len()
+        );
     }
 
     /// Refresh the listing of search paths by parsing the `:show paths` output.
@@ -1038,7 +1156,6 @@ impl Ghci {
             }
         }
     }
-
 
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {

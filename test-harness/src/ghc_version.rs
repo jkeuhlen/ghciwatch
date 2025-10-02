@@ -87,7 +87,7 @@ mod tests {
         assert_eq!("9.4.8".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc94);
         assert_eq!("9.6.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc96);
         assert_eq!("9.10.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
-        assert_eq!("9.12.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
+        assert_eq!("9.12.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc912);
 
         "9.6.1rc1"
             .parse::<GhcVersion>()

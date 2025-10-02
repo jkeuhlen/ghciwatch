@@ -110,6 +110,7 @@ pub struct Span {
 }
 
 impl Span {
+    /// Create a new span with the given name for testing.
     #[cfg(test)]
     pub fn new(name: impl Display) -> Self {
         Self {

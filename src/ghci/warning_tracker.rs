@@ -122,7 +122,6 @@ impl WarningTracker {
     pub fn has_warnings(&self) -> bool {
         self.warning_count() > 0
     }
-
 }
 
 impl Default for WarningTracker {
