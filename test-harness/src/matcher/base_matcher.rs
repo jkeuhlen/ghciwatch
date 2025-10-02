@@ -517,7 +517,7 @@ mod tests {
             .unwrap());
 
         // Span exists, but it's not the leaf span.
-        assert!(BaseMatcher::span_close()
+        assert!(!BaseMatcher::span_close()
             .in_leaf_spans(["error_log_write"])
             .matches(&Event {
                 timestamp: "2023-09-12T18:06:04.677942Z".into(),
