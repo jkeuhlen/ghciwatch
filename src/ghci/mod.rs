@@ -614,21 +614,14 @@ impl Ghci {
         Ok(())
     }
 
-    /// Refresh the listing of targets by parsing the `:show paths` and `:show targets` output.
-    /// For multi-component sessions, we try `:show modules` first to get absolute paths.
-    /// 
-    /// If a compilation log is provided and both :show modules and :show targets return empty,
-    /// we'll populate targets from error diagnostics (for cabal component sessions).
-    #[instrument(skip_all, level = "debug")]
-    async fn refresh_targets(&mut self) -> miette::Result<()> {
-        self.refresh_targets_with_log(None).await
-    }
-    
     /// Refresh targets with optional compilation log for fallback.
     #[instrument(skip_all, level = "debug")]
-    async fn refresh_targets_with_log(&mut self, log: Option<&CompilationLog>) -> miette::Result<()> {
+    async fn refresh_targets_with_log(
+        &mut self,
+        log: Option<&CompilationLog>,
+    ) -> miette::Result<()> {
         self.refresh_paths().await?;
-        
+
         // Try to use :show modules first (better for multi-component sessions)
         // If it fails or returns empty (e.g., when modules fail to compile), fall back to :show targets
         match self
@@ -638,7 +631,10 @@ impl Ghci {
         {
             Ok(modules) if modules.len() > 0 => {
                 self.targets = modules;
-                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show modules");
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show modules"
+                );
 
                 // Even when :show modules succeeds, also add failed modules from diagnostics
                 // because they won't appear in the modules list. Only do this if there are
@@ -657,12 +653,17 @@ impl Ghci {
                 }
             }
             Ok(_) => {
-                tracing::debug!("Got empty result from :show modules, falling back to :show targets");
+                tracing::debug!(
+                    "Got empty result from :show modules, falling back to :show targets"
+                );
                 self.targets = self
                     .stdin
                     .show_targets(&mut self.stdout, &self.search_paths)
                     .await?;
-                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show targets");
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show targets"
+                );
 
                 // When using :show targets, also add failed modules from diagnostics
                 // because they won't appear in the targets list
@@ -678,12 +679,18 @@ impl Ghci {
                 }
             }
             Err(err) => {
-                tracing::debug!(?err, "Failed to parse :show modules, falling back to :show targets");
+                tracing::debug!(
+                    ?err,
+                    "Failed to parse :show modules, falling back to :show targets"
+                );
                 self.targets = self
                     .stdin
                     .show_targets(&mut self.stdout, &self.search_paths)
                     .await?;
-                tracing::debug!(targets = self.targets.len(), "Parsed targets from :show targets");
+                tracing::debug!(
+                    targets = self.targets.len(),
+                    "Parsed targets from :show targets"
+                );
 
                 // When using :show targets, also add failed modules from diagnostics
                 // because they won't appear in the targets list
@@ -699,10 +706,10 @@ impl Ghci {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Populate targets from compilation diagnostics when :show commands return empty or incomplete.
     /// This helps with cabal component sessions where failed modules aren't listed.
     /// Only adds modules that aren't already tracked to preserve existing module information.
@@ -749,7 +756,10 @@ impl Ghci {
             }
         }
 
-        tracing::debug!("populate_targets_from_diagnostics added {} modules", paths_added.len());
+        tracing::debug!(
+            "populate_targets_from_diagnostics added {} modules",
+            paths_added.len()
+        );
     }
 
     /// Refresh the listing of search paths by parsing the `:show paths` output.
@@ -1146,7 +1156,6 @@ impl Ghci {
             }
         }
     }
-
 
     #[instrument(skip(self), level = "trace")]
     async fn write_error_log(&mut self, log: &CompilationLog) -> miette::Result<()> {
