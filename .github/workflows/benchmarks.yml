@@ -2,20 +2,26 @@ name: Benchmarks
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
     paths:
-      - 'src/**'
-      - 'benches/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+      - "src/**"
+      - "benches/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   push:
     branches:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write    # needed so the benchmark action can push to gh-pages
+  pull-requests: write
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   benchmark:
@@ -32,9 +38,8 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
-          rustflags: ""
 
-      - name: Cache cargo registry
+      - name: Cache cargo/target
         uses: actions/cache@v4
         with:
           path: |
@@ -48,40 +53,63 @@ jobs:
 
       - name: Run benchmarks
         run: |
-          cargo bench --bench ghci_parsing -- --output-format bencher | tee output.txt
-          cargo bench --bench incremental_reader -- --output-format bencher | tee -a output.txt
-          cargo bench --bench file_events -- --output-format bencher | tee -a output.txt
-          cargo bench --bench eval_parsing -- --output-format bencher | tee -a output.txt
-          cargo bench --bench tui_rendering -- --output-format bencher | tee -a output.txt
+          set -euo pipefail
+          cargo bench --bench ghci_parsing        -- --output-format bencher | tee  output.txt
+          cargo bench --bench incremental_reader  -- --output-format bencher | tee -a output.txt
+          cargo bench --bench file_events         -- --output-format bencher | tee -a output.txt
+          cargo bench --bench eval_parsing        -- --output-format bencher | tee -a output.txt
+          cargo bench --bench tui_rendering       -- --output-format bencher | tee -a output.txt
 
-      - name: Store benchmark result
-        uses: benchmark-action/github-action-benchmark@v1
+      # Store historical data on pushes to main (creates gh-pages on first run)
+      - name: Store benchmark result (main)
         if: github.event_name != 'pull_request'
+        uses: benchmark-action/github-action-benchmark@v1
         with:
           name: ghciwatch Benchmarks
-          tool: 'cargo'
+          tool: cargo
           output-file-path: output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
           auto-push: true
+          # Avoid failing the very first run when gh-pages doesn't exist yet
+          skip-fetch-gh-pages: true
           comment-on-alert: true
           alert-threshold: "150%"
+          save-data-file: true
+
+      # On PRs, only try fetching gh-pages if it exists
+      - name: Check if gh-pages exists
+        id: ghp
+        if: github.event_name == 'pull_request'
+        run: |
+          if git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compare benchmarks (PR)
-        uses: benchmark-action/github-action-benchmark@v1
         if: github.event_name == 'pull_request'
+        uses: benchmark-action/github-action-benchmark@v1
         with:
           name: ghciwatch Benchmarks
-          tool: 'cargo'
+          tool: cargo
           output-file-path: output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          auto-push: false
+          # If gh-pages is missing, skip fetch so the step doesn't fail; it'll still post current results
+          skip-fetch-gh-pages: ${{ steps.ghp.outputs.exists != 'true' }}
           comment-on-alert: true
-          alert-threshold: '110%'
+          alert-threshold: "110%"
           fail-on-alert: false
           comment-always: true
 
       - name: Upload criterion reports
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: criterion-reports
           path: target/criterion
@@ -94,17 +122,18 @@ jobs:
     needs: benchmark
 
     steps:
+      # Build baseline from main
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          rustflags: ""
 
-      - name: Cache cargo registry
+      - name: Cache cargo/target (baseline)
         uses: actions/cache@v4
         with:
           path: |
@@ -113,49 +142,53 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-bench-baseline-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Save baseline
+      - name: Save baseline (criterion)
         run: |
-          cargo bench --bench ghci_parsing -- --save-baseline main
-          cargo bench --bench incremental_reader -- --save-baseline main
-          cargo bench --bench file_events -- --save-baseline main
-          cargo bench --bench eval_parsing -- --save-baseline main
-          cargo bench --bench tui_rendering -- --save-baseline main
+          set -euo pipefail
+          cargo bench --bench ghci_parsing        -- --save-baseline main
+          cargo bench --bench incremental_reader  -- --save-baseline main
+          cargo bench --bench file_events         -- --save-baseline main
+          cargo bench --bench eval_parsing        -- --save-baseline main
+          cargo bench --bench tui_rendering       -- --save-baseline main
 
+      # Switch to the PR revision
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Run comparison
+      - name: Run comparison against baseline
         run: |
-          cargo bench --bench ghci_parsing -- --baseline main --output-format bencher | tee comparison.txt
-          cargo bench --bench incremental_reader -- --baseline main --output-format bencher | tee -a comparison.txt
-          cargo bench --bench file_events -- --baseline main --output-format bencher | tee -a comparison.txt
-          cargo bench --bench eval_parsing -- --baseline main --output-format bencher | tee -a comparison.txt
-          cargo bench --bench tui_rendering -- --baseline main --output-format bencher | tee -a comparison.txt
+          set -euo pipefail
+          cargo bench --bench ghci_parsing        -- --baseline main --output-format bencher | tee  comparison.txt
+          cargo bench --bench incremental_reader  -- --baseline main --output-format bencher | tee -a comparison.txt
+          cargo bench --bench file_events         -- --baseline main --output-format bencher | tee -a comparison.txt
+          cargo bench --bench eval_parsing        -- --baseline main --output-format bencher | tee -a comparison.txt
+          cargo bench --bench tui_rendering       -- --baseline main --output-format bencher | tee -a comparison.txt
 
       - name: Comment PR with comparison
-        uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const comparison = fs.readFileSync('comparison.txt', 'utf8');
+            const body = [
+              '## Benchmark Comparison',
+              '',
+              '<details>',
+              '<summary>Click to expand benchmark results</summary>',
+              '',
+              '```',
+              comparison,
+              '```',
+              '',
+              `View full criterion reports in the workflow run artifacts.`,
+              '</details>'
+            ].join('\n');
 
-            const comment = `## Benchmark Comparison
-
-            <details>
-            <summary>Click to expand benchmark results</summary>
-
-            \`\`\`
-            ${comparison}
-            \`\`\`
-
-            </details>
-
-            [View full criterion reports](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            `;
-
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body
             });
