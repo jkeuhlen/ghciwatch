@@ -14,7 +14,7 @@ GHCI_OPTS ?= \
 
 CABAL_REPL ?= $(CABAL) \
 	--repl-options='$(GHCI_OPTS)' \
-	v2-repl lib:test-dev
+	v2-repl lib:my-simple-package
 
 GHCIWATCH_OPTS ?=
 GHCIWATCH ?= ../../../target/release/ghciwatch \

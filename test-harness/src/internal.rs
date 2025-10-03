@@ -8,10 +8,14 @@ use std::time::Duration;
 use miette::miette;
 use miette::Context;
 use miette::IntoDiagnostic;
-use nix::sys::signal;
-use nix::sys::signal::Signal;
-use nix::unistd::Pid;
 use tokio::process::Child;
+
+#[cfg(unix)]
+use nix::sys::signal;
+#[cfg(unix)]
+use nix::sys::signal::Signal;
+#[cfg(unix)]
+use nix::unistd::Pid;
 
 thread_local! {
     /// The temporary directory where `ghciwatch` is run. Note that because tests are run with the
@@ -110,7 +114,10 @@ async fn cleanup() {
             return;
         }
     };
+    #[cfg(unix)]
     let _ = send_signal(&child, Signal::SIGINT);
+    #[cfg(windows)]
+    let _ = send_signal(&child, ());
     match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
         Err(_) => {
             tracing::info!("ghciwatch didn't exit in time, killing");
@@ -215,7 +222,9 @@ pub(crate) fn take_ghciwatch_process() -> miette::Result<Child> {
         .ok_or_else(|| miette!("GHCIWATCH_PROCESS is not set; have you constructed a `GhciWatch`?"))
 }
 
-/// Send a signal to a child process.
+/// Send a signal to a child process (Unix only).
+/// On Windows, this is a no-op as we rely on process termination.
+#[cfg(unix)]
 pub(crate) fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
     signal::kill(
         Pid::from_raw(
@@ -229,4 +238,13 @@ pub(crate) fn send_signal(child: &Child, signal: Signal) -> miette::Result<()> {
         signal,
     )
     .into_diagnostic()
+}
+
+/// Send a signal to a child process (Windows stub).
+/// On Windows, we can't send Unix signals, so this is a no-op.
+#[cfg(windows)]
+pub(crate) fn send_signal(child: &Child, _signal: ()) -> miette::Result<()> {
+    // On Windows, we can't send Unix signals.
+    // The process will be terminated with kill() if needed.
+    Ok(())
 }

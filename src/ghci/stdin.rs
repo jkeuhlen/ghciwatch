@@ -187,6 +187,20 @@ impl GhciStdin {
         stdout.show_targets(show_paths).await
     }
 
+    #[instrument(skip_all, level = "debug")]
+    pub async fn show_modules(
+        &mut self,
+        stdout: &mut GhciStdout,
+        show_paths: &ShowPaths,
+    ) -> miette::Result<ModuleSet> {
+        self.stdin
+            .write_all(b":show modules\n")
+            .await
+            .into_diagnostic()?;
+
+        stdout.show_modules(show_paths).await
+    }
+
     #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {

@@ -38,6 +38,7 @@ pub struct GhciWatchBuilder {
     make_args: Vec<String>,
     ghc_args: Vec<String>,
     cabal_args: Vec<String>,
+    custom_command: Option<String>,
     #[allow(clippy::type_complexity)]
     before_start: Option<Box<dyn FnOnce(PathBuf) -> BoxFuture<'static, miette::Result<()>> + Send>>,
     default_timeout: Duration,
@@ -54,6 +55,7 @@ impl GhciWatchBuilder {
             ghc_args: Default::default(),
             make_args: Default::default(),
             cabal_args: Default::default(),
+            custom_command: None,
             before_start: None,
             default_timeout: Duration::from_secs(10),
             startup_timeout: Duration::from_secs(60),
@@ -110,6 +112,15 @@ impl GhciWatchBuilder {
     pub fn with_cabal_args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         self.cabal_args
             .extend(args.into_iter().map(|s| s.as_ref().to_owned()));
+        self
+    }
+
+    /// Set a custom command for starting the GHCi session.
+    ///
+    /// This overrides the default `make ghci` command that the test harness normally uses.
+    /// Use this when you need to test with a specific command like `cabal repl --enable-multi-repl`.
+    pub fn with_command(mut self, command: impl AsRef<str>) -> Self {
+        self.custom_command = Some(command.as_ref().to_owned());
         self
     }
 
@@ -280,17 +291,21 @@ impl GhciWatch {
         let log_path = tempdir.join(LOG_FILENAME);
 
         tracing::info!("Starting ghciwatch");
-        let repl_command = shell_words::join(
-            [
-                "make",
-                "ghci",
-                &format!("GHC=ghc-{ghc_version}"),
-                &format!("EXTRA_GHC_OPTS={}", shell_words::join(builder.ghc_args)),
-                &format!("CABAL_OPTS={}", shell_words::join(builder.cabal_args)),
-            ]
-            .into_iter()
-            .chain(builder.make_args.iter().map(|s| s.as_str())),
-        );
+        let repl_command = if let Some(custom_command) = builder.custom_command {
+            custom_command
+        } else {
+            shell_words::join(
+                [
+                    "make",
+                    "ghci",
+                    &format!("GHC=ghc-{ghc_version}"),
+                    &format!("EXTRA_GHC_OPTS={}", shell_words::join(builder.ghc_args)),
+                    &format!("CABAL_OPTS={}", shell_words::join(builder.cabal_args)),
+                ]
+                .into_iter()
+                .chain(builder.make_args.iter().map(|s| s.as_str())),
+            )
+        };
 
         let log_filters = ["ghciwatch::watcher=trace", "ghciwatch=debug"]
             .into_iter()
@@ -606,8 +621,19 @@ impl GhciWatch {
     ///
     /// This creates and returns a new [`Checkpoint`].
     pub async fn restart_ghciwatch(&mut self) -> miette::Result<Checkpoint> {
+        #[cfg(unix)]
         let child = crate::internal::take_ghciwatch_process()?;
+        #[cfg(windows)]
+        let mut child = crate::internal::take_ghciwatch_process()?;
+
+        #[cfg(unix)]
         crate::internal::send_signal(&child, nix::sys::signal::Signal::SIGINT)?;
+        #[cfg(windows)]
+        {
+            // On Windows, we can't send SIGINT, so we'll just kill the process
+            // This is less graceful but necessary for Windows compatibility
+            child.kill().await.into_diagnostic()?;
+        }
         // Put it back.
         crate::internal::set_ghciwatch_process(child)?;
 

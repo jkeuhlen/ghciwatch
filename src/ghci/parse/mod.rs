@@ -5,6 +5,7 @@ mod ghc_message;
 mod haskell_grammar;
 mod lines;
 mod module_and_files;
+mod show_modules;
 mod show_paths;
 mod show_targets;
 
@@ -24,6 +25,7 @@ pub use ghc_message::ModulesLoaded;
 pub use ghc_message::PositionRange;
 pub use ghc_message::Severity;
 pub use module_and_files::CompilingModule;
+pub use show_modules::parse_show_modules;
 pub use show_paths::parse_show_paths;
 pub use show_paths::ShowPaths;
 pub use show_targets::parse_show_targets;

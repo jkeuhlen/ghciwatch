@@ -3,9 +3,7 @@
 
 use std::fmt::Display;
 
-use clap::builder::EnumValueParser;
 use clap::builder::PossibleValue;
-use clap::builder::ValueParserFactory;
 
 /// Whether to display backtraces in errors.
 #[derive(Debug, Clone, Copy)]
@@ -40,15 +38,5 @@ impl Display for RustBacktrace {
             RustBacktrace::On => write!(f, "1"),
             RustBacktrace::Full => write!(f, "full"),
         }
-    }
-}
-
-struct RustBacktraceParserFactory;
-
-impl ValueParserFactory for RustBacktraceParserFactory {
-    type Parser = EnumValueParser<RustBacktrace>;
-
-    fn value_parser() -> Self::Parser {
-        Self::Parser::new()
     }
 }
