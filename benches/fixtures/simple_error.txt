@@ -1,0 +1,7 @@
+src/Main.hs:10:5: error:
+    • Couldn't match expected type 'Int' with actual type 'String'
+    • In the expression: "hello"
+      In an equation for 'x': x = "hello"
+   |
+10 |     x = "hello"
+   |         ^^^^^^^

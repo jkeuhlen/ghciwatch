@@ -1,0 +1,28 @@
+src/Main.hs:10:5: error:
+    • Couldn't match expected type 'Int' with actual type 'String'
+    • In the expression: "hello"
+      In an equation for 'x': x = "hello"
+   |
+10 |     x = "hello"
+   |         ^^^^^^^
+
+src/Main.hs:15:1: error:
+    • No instance for (Show MyType) arising from a use of 'print'
+    • In the expression: print myValue
+      In an equation for 'main': main = print myValue
+   |
+15 | main = print myValue
+   |        ^^^^^^^^^^^^^^
+
+src/Types.hs:25:10: error:
+    • Data constructor not in scope: MkFoo :: Int -> Foo
+    • Perhaps you meant 'MkBar' (line 20)
+   |
+25 | myFoo = MkFoo 42
+   |         ^^^^^
+
+src/Utils.hs:8:15: error:
+    • Variable not in scope: undefined :: String -> IO ()
+   |
+8 | doSomething = undefined "test"
+  |               ^^^^^^^^^

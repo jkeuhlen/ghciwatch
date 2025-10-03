@@ -1,0 +1,49 @@
+[1 of 5] Compiling Types            ( src/Types.hs, interpreted )
+
+src/Types.hs:10:1: warning: [-Wunused-imports]
+    The import of 'Control.Monad' is redundant
+   |
+10 | import Control.Monad
+   | ^^^^^^^^^^^^^^^^^^^^
+
+[2 of 5] Compiling Utils            ( src/Utils.hs, interpreted )
+
+src/Utils.hs:15:5: error:
+    • Couldn't match type '[Char]' with 'Int'
+      Expected: Int
+        Actual: String
+    • In the expression: "not a number"
+      In an equation for 'count': count = "not a number"
+   |
+15 |     count = "not a number"
+   |             ^^^^^^^^^^^^^^
+
+[3 of 5] Compiling Parser           ( src/Parser.hs, interpreted )
+
+src/Parser.hs:25:1: warning: [-Wmissing-signatures]
+    Top-level binding with no type signature:
+      parseExpr :: String -> Maybe Expr
+   |
+25 | parseExpr input = ...
+   | ^^^^^^^^^
+
+src/Parser.hs:30:10: warning: [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns of type 'Token' not matched:
+            TokEOF
+   |
+30 |   case token of
+   |   ^^^^^^^^^^^^^...
+
+[4 of 5] Compiling Main             ( src/Main.hs, interpreted )
+
+src/Main.hs:50:10: error:
+    • No instance for (MonadIO Maybe) arising from a use of 'liftIO'
+    • In the expression: liftIO $ putStrLn "Hello"
+      In an equation for 'test': test = liftIO $ putStrLn "Hello"
+   |
+50 |   test = liftIO $ putStrLn "Hello"
+   |          ^^^^^^
+
+Failed, 3 modules loaded.
