@@ -306,9 +306,7 @@ fn generate_mixed_eval_file(examples: usize) -> String {
         match i % 5 {
             0 => {
                 source.push_str("-- Property test example\n");
-                source.push_str(&format!(
-                    "-- prop> \\x -> reverse (reverse x) == (x :: [Int])\n"
-                ));
+                source.push_str("-- prop> \\x -> reverse (reverse x) == (x :: [Int])\n");
             }
             1 => {
                 source.push_str("-- REPL command\n");

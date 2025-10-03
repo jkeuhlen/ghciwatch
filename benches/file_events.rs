@@ -86,7 +86,7 @@ fn bench_path_operations(c: &mut Criterion) {
             for path in &paths {
                 if path
                     .extension()
-                    .map_or(false, |ext| ext == "hs" || ext == "lhs")
+                    .is_some_and(|ext| ext == "hs" || ext == "lhs")
                 {
                     haskell_files += 1;
                 }
@@ -206,7 +206,7 @@ fn bench_event_filtering(c: &mut Criterion) {
                 .iter()
                 .filter(|(_, path)| {
                     path.extension()
-                        .map_or(false, |ext| ext == "hs" || ext == "lhs")
+                        .is_some_and(|ext| ext == "hs" || ext == "lhs")
                 })
                 .cloned()
                 .collect();
