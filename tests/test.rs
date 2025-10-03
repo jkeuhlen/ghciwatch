@@ -8,6 +8,7 @@ use test_harness::GhciWatchBuilder;
 async fn can_run_test_suite_on_reload() {
     let error_path = "ghcid.txt";
     let mut session = GhciWatchBuilder::new("tests/data/simple")
+        .with_command("cabal --repl-options='-fwrite-interface -hisuf ghci_hi' v2-repl lib:my-simple-package lib:test-lib")
         .with_args(["--test-ghci", "TestMain.testMain", "--errors", error_path])
         .start()
         .await
