@@ -47,7 +47,7 @@ pub enum GhcVersion {
 
 fn ghc_version_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^([0-9]+)\.([0-9]+)\.([0-9]+)$").unwrap())
+    RE.get_or_init(|| Regex::new(r"^([0-9]+)\.([0-9]+)(?:\.([0-9]+))?$").unwrap())
 }
 
 impl FromStr for GhcVersion {
@@ -55,10 +55,11 @@ impl FromStr for GhcVersion {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let captures = ghc_version_re().captures(s).ok_or_else(|| {
-            miette!("Failed to parse GHC version. Expected a string like \"9.6.2\", got {s:?}")
+            miette!("Failed to parse GHC version. Expected a string like \"9.6\" or \"9.6.2\", got {s:?}")
         })?;
 
-        let (_full, [major, minor, _patch]) = captures.extract();
+        let major = captures.get(1).unwrap().as_str();
+        let minor = captures.get(2).unwrap().as_str();
 
         match (major, minor) {
             ("9", "4") => Ok(Self::Ghc94),
@@ -89,6 +90,11 @@ mod tests {
         assert_eq!("9.10.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
         assert_eq!("9.12.1".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc912);
 
+        // Test parsing without patch version
+        assert_eq!("9.4".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc94);
+        assert_eq!("9.6".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc96);
+        assert_eq!("9.10".parse::<GhcVersion>().unwrap(), GhcVersion::Ghc910);
+
         "9.6.1rc1"
             .parse::<GhcVersion>()
             .expect_err("Extra information at the end");
@@ -98,11 +104,8 @@ mod tests {
         "9.6.1.2"
             .parse::<GhcVersion>()
             .expect_err("Extra version component");
-        "9.6"
-            .parse::<GhcVersion>()
-            .expect_err("Missing patch version component");
         "9".parse::<GhcVersion>()
-            .expect_err("Missing patch and minor version components");
+            .expect_err("Missing minor version component");
         "a.b.c"
             .parse::<GhcVersion>()
             .expect_err("Non-numeric components");

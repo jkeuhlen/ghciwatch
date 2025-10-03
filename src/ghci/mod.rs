@@ -450,6 +450,9 @@ impl Ghci {
                     needs_reload.push(path);
                 } else {
                     // Otherwise we need to `:add` the new paths.
+                    // Note: This can cause issues with modules that failed to compile initially
+                    // due to GHC bug #13254, but a proper fix requires tracking all modules
+                    // attempted during initial load.
                     tracing::debug!(%path, "Needs add");
                     needs_add.push(path);
                 }
@@ -1057,6 +1060,7 @@ impl Ghci {
         let event = events[N - 1];
 
         if let Some(CompilationResult::Err) = log.result() {
+            tracing::error!("Compilation failed");
             tracing::error!(
                 "{} failed in {:.2?}",
                 event.event_noun().first_char_to_ascii_uppercase(),
@@ -1076,6 +1080,7 @@ impl Ghci {
             };
 
             if warning_count > 0 {
+                tracing::info!("Compilation succeeded");
                 tracing::info!(
                     "{} Finished {} in {:.2?} ({} warning{} tracked)",
                     "Compilation succeeded".if_supports_color(Stdout, |text| text.yellow()),
@@ -1085,6 +1090,7 @@ impl Ghci {
                     if warning_count == 1 { "" } else { "s" }
                 );
             } else {
+                tracing::info!("Compilation succeeded");
                 tracing::info!(
                     "{} Finished {} in {:.2?}",
                     "All good!".if_supports_color(Stdout, |text| text.green()),

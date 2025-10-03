@@ -621,8 +621,19 @@ impl GhciWatch {
     ///
     /// This creates and returns a new [`Checkpoint`].
     pub async fn restart_ghciwatch(&mut self) -> miette::Result<Checkpoint> {
+        #[cfg(unix)]
         let child = crate::internal::take_ghciwatch_process()?;
+        #[cfg(windows)]
+        let mut child = crate::internal::take_ghciwatch_process()?;
+
+        #[cfg(unix)]
         crate::internal::send_signal(&child, nix::sys::signal::Signal::SIGINT)?;
+        #[cfg(windows)]
+        {
+            // On Windows, we can't send SIGINT, so we'll just kill the process
+            // This is less graceful but necessary for Windows compatibility
+            child.kill().await.into_diagnostic()?;
+        }
         // Put it back.
         crate::internal::set_ghciwatch_process(child)?;
 
