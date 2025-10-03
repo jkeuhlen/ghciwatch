@@ -81,3 +81,117 @@ jobs:
         uses: haskell-actions/setup@v2
         with:
           ghc-version: "9.6.7"
+          enable-stack: false
+          cabal-version: latest
+
+      - name: Prepare test environment
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$XDG_CONFIG_HOME/ghc" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+          : > "$XDG_CONFIG_HOME/ghc/ghci.conf"
+          which ghci && ghci --version || true
+          which ghc && ghc --version || true
+          locale || true
+          echo "TERM=${TERM}"
+
+      - name: Run unit tests
+        run: |
+          cargo nextest run --lib --bins \
+            --no-fail-fast \
+            --failure-output=immediate-final \
+            --status-level=test
+
+      - name: Run integration tests
+        run: |
+          cargo nextest run --tests \
+            --no-fail-fast \
+            --failure-output=immediate-final \
+            --status-level=test
+
+      - name: Archive nextest results
+        if: always()
+        run: |
+          cargo nextest archive --archive-file target/nextest/nextest-archive.tar.zst || true
+
+      - name: Upload nextest archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextest-archive-${{ matrix.os }}
+          path: target/nextest/nextest-archive.tar.zst
+          if-no-files-found: ignore
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --all-features --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  msrv:
+    name: MSRV Check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        shell: bash
+        run: |
+          msrv=$(grep -E '^rust-version\s*=' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$msrv" ]; then
+            echo "No MSRV found, using 1.82.0 (required by dependencies)"
+            msrv="1.82.0"
+          fi
+          echo "msrv=$msrv" >> $GITHUB_OUTPUT
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.msrv }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-features
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-22.04
+    if: github.ref == 'refs/heads/main'
+    env:
+      TERM: xterm-256color
+      XDG_CONFIG_HOME: ${{ github.workspace }}/.config
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      XDG_STATE_HOME: ${{ github.workspace }}/.state
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Setup Haskell for integration tests
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.6.7"
+          enable-stack: false
+          cabal-version: latest
+      - name: Prepare environment for coverage
+        run: |
+          mkdir -p "$XDG_CONFIG_HOME/ghc" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+          : > "$XDG_CONFIG_HOME/ghc/ghci.conf"
+      - name: Generate coverage
+        run: cargo llvm-cov nextest --all-features --lcov --output-path lcov.info --no-fail-fast
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
