@@ -80,7 +80,7 @@ jobs:
       - name: Setup Haskell
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: "9.6.7"
+          ghc-version: ${{ env.GHC_VERSIONS }}
           enable-stack: false
           cabal-version: latest
 
@@ -90,24 +90,23 @@ jobs:
           set -euxo pipefail
           mkdir -p "$XDG_CONFIG_HOME/ghc" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
           : > "$XDG_CONFIG_HOME/ghc/ghci.conf"
-          which ghci && ghci --version || true
-          which ghc && ghc --version || true
-          locale || true
+          ghci --version || true
+          ghc --version || true
           echo "TERM=${TERM}"
 
+      # Unit tests (libs + bins)
       - name: Run unit tests
         run: |
           cargo nextest run --lib --bins \
             --no-fail-fast \
-            --failure-output=immediate-final \
-            --status-level=test
+            --failure-output=immediate-final
 
+      # Integration tests (in tests/)
       - name: Run integration tests
         run: |
           cargo nextest run --tests \
             --no-fail-fast \
-            --failure-output=immediate-final \
-            --status-level=test
+            --failure-output=immediate-final
 
       - name: Archive nextest results
         if: always()
@@ -151,12 +150,14 @@ jobs:
         id: msrv
         shell: bash
         run: |
-          msrv=$(grep -E '^rust-version\s*=' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
-          if [ -z "$msrv" ]; then
+          set -euo pipefail
+          if grep -qE '^\s*rust-version\s*=\s*".*"' Cargo.toml; then
+            msrv=$(sed -nE 's/^\s*rust-version\s*=\s*"(.*)".*/\1/p' Cargo.toml | head -n1)
+          else
             echo "No MSRV found, using 1.82.0 (required by dependencies)"
             msrv="1.82.0"
           fi
-          echo "msrv=$msrv" >> $GITHUB_OUTPUT
+          echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.msrv.outputs.msrv }}
@@ -181,7 +182,7 @@ jobs:
       - name: Setup Haskell for integration tests
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: "9.6.7"
+          ghc-version: ${{ env.GHC_VERSIONS }}
           enable-stack: false
           cabal-version: latest
       - name: Prepare environment for coverage
