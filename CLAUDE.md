@@ -53,6 +53,9 @@ The codebase follows a modular architecture with clear separation of concerns:
 3. **File Watching** (`src/watcher.rs`): Monitors filesystem changes and triggers reload events. Uses the `notify` crate for cross-platform file watching.
 
 4. **TUI (Terminal UI)** (`src/tui/`): Optional terminal interface for displaying compilation results in a structured format using ratatui.
+   - Supports user-configurable actions accessible via number keys (1-9)
+   - Actions can be shell commands or internal commands that modify runtime settings
+   - See [docs/tui.md](docs/tui.md) for detailed TUI documentation
 
 ### Key Architectural Patterns
 
@@ -68,6 +71,12 @@ The codebase follows a modular architecture with clear separation of concerns:
 3. GHCi output is parsed → compilation results displayed to user
 4. Lifecycle hooks execute at appropriate points
 5. TUI (if enabled) continuously updates display with latest compilation state
+
+## TUI Mode and No-Load Mode
+
+For detailed information about these advanced features, see:
+- [docs/tui.md](docs/tui.md) - Interactive TUI mode with custom actions (includes toggle for no-load mode)
+- [docs/no-load.md](docs/no-load.md) - Fast reloads using `--repl-no-load`
 
 ## Development Notes
 

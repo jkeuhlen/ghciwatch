@@ -21,7 +21,16 @@ use super::Ghci;
 use super::GhciOpts;
 use super::GhciReloadKind;
 
-/// An event sent to [`Ghci`] by the watcher.
+/// An internal command that modifies ghciwatch runtime settings.
+#[derive(Debug, Clone)]
+pub enum InternalCommand {
+    /// Toggle warning tracking on/off.
+    ToggleTrackWarnings,
+    /// Toggle `--repl-no-load` flag in the GHCi command.
+    ToggleNoLoad,
+}
+
+/// An event sent to [`Ghci`] by the watcher or TUI.
 #[derive(Debug, Clone)]
 pub enum WatcherEvent {
     /// Reload the `ghci` session.
@@ -29,21 +38,38 @@ pub enum WatcherEvent {
         /// The file events to respond to.
         events: BTreeSet<FileEvent>,
     },
+    /// Execute a user-defined action from the TUI.
+    Action {
+        /// The shell command to execute.
+        command: String,
+    },
+    /// Execute an internal ghciwatch command that modifies settings.
+    Internal {
+        /// The internal command to execute.
+        command: InternalCommand,
+    },
 }
 
 impl WatcherEvent {
     /// When we interrupt an event to reload, add the file events together so that we don't lose
     /// work.
     fn merge(&mut self, other: WatcherEvent) {
-        match (self, other) {
+        match (&mut *self, &other) {
             (
                 WatcherEvent::Reload { events },
                 WatcherEvent::Reload {
                     events: other_events,
                 },
             ) => {
-                events.extend(other_events);
+                events.extend(other_events.clone());
             }
+            // Actions and internal commands can't be merged, just replace with the newer one
+            (_, WatcherEvent::Action { .. }) | (_, WatcherEvent::Internal { .. }) => {
+                *self = other;
+            }
+            // If we have an action/internal and get a reload, keep the action/internal
+            (WatcherEvent::Action { .. }, WatcherEvent::Reload { .. })
+            | (WatcherEvent::Internal { .. }, WatcherEvent::Reload { .. }) => {}
         }
     }
 }
@@ -150,6 +176,51 @@ async fn dispatch(
     match event {
         WatcherEvent::Reload { events } => {
             ghci.lock().await.reload(events, reload_sender).await?;
+        }
+        WatcherEvent::Action { command } => {
+            use miette::IntoDiagnostic;
+            tracing::info!(%command, "Executing TUI action");
+
+            // Execute the shell command
+            let output = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(&command)
+                .output()
+                .await
+                .into_diagnostic()
+                .wrap_err("Failed to execute TUI action")?;
+
+            if !output.status.success() {
+                tracing::error!(
+                    status = ?output.status,
+                    stderr = %String::from_utf8_lossy(&output.stderr),
+                    "TUI action failed"
+                );
+            } else {
+                tracing::debug!(
+                    stdout = %String::from_utf8_lossy(&output.stdout),
+                    "TUI action completed successfully"
+                );
+            }
+
+            // Notify that we're done (no reload needed)
+            let _ = reload_sender.send(GhciReloadKind::None);
+        }
+        WatcherEvent::Internal { command } => {
+            tracing::info!(?command, "Executing internal command");
+            let mut ghci = ghci.lock().await;
+
+            match command {
+                InternalCommand::ToggleTrackWarnings => {
+                    ghci.toggle_track_warnings().await?;
+                }
+                InternalCommand::ToggleNoLoad => {
+                    ghci.toggle_no_load().await?;
+                }
+            }
+
+            // Notify that we're done (triggers a restart)
+            let _ = reload_sender.send(GhciReloadKind::Restart);
         }
     }
     Ok(())

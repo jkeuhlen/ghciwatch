@@ -27,6 +27,8 @@ use tracing::instrument;
 mod terminal;
 
 use crate::buffers::TUI_SCROLLBACK_CAPACITY;
+use crate::cli::{TuiAction, TuiActionCommand};
+use crate::ghci::manager::{InternalCommand, WatcherEvent};
 use crate::ShutdownHandle;
 use terminal::TerminalGuard;
 
@@ -41,29 +43,41 @@ struct TuiState {
     scrollback: Vec<u8>,
     line_count: Saturating<usize>,
     scroll_offset: Saturating<usize>,
+    actions: Vec<TuiAction>,
+    show_actions: bool,
+    quit_confirm: bool,
 }
 
-impl Default for TuiState {
-    fn default() -> Self {
+impl TuiState {
+    fn new(actions: Vec<TuiAction>) -> Self {
         Self {
             debug: false,
             quit: false,
             scrollback: Vec::with_capacity(TUI_SCROLLBACK_CAPACITY),
             line_count: Saturating(1),
             scroll_offset: Saturating(0),
+            actions,
+            show_actions: true,
+            quit_confirm: false,
         }
     }
-}
 
-impl TuiState {
     #[instrument(level = "trace", skip_all)]
     fn render_inner(&self, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
         if area.width == 0 || area.height == 0 {
             return Ok(());
         }
 
+        // Actions are shown as a single row at the bottom
+        let action_height = if self.show_actions && !self.actions.is_empty() {
+            1
+        } else {
+            0
+        };
+
         let areas = Layout::vertical([
             Constraint::Fill(1),
+            Constraint::Length(action_height),
             Constraint::Length(if self.debug { 1 } else { 0 }),
         ])
         .split(area);
@@ -79,13 +93,31 @@ impl TuiState {
             .scroll((scroll_offset, 0))
             .render(areas[0], buffer);
 
+        // Render actions as a horizontal row
+        if self.show_actions && !self.actions.is_empty() {
+            let action_text = if self.quit_confirm {
+                "Quit? Press [q] or [y] to confirm, any other key to cancel".to_string()
+            } else {
+                let mut text = String::new();
+                for (i, action) in self.actions.iter().enumerate() {
+                    if i > 0 {
+                        text.push_str(" | ");
+                    }
+                    text.push_str(&format!("[{}] {}", i + 1, action.label));
+                }
+                text.push_str(" | [a] hide | [q] quit");
+                text
+            };
+            Paragraph::new(action_text).render(areas[1], buffer);
+        }
+
         if self.debug {
             let line_count = self.line_count;
             let scroll_offset = self.scroll_offset;
             Paragraph::new(format!(
                 "(☞ ﾟ ヮﾟ )☞  line_count={line_count}, scroll_offset={scroll_offset}"
             ))
-            .render(areas[1], buffer);
+            .render(areas[2], buffer);
         }
 
         Ok(())
@@ -97,6 +129,7 @@ struct Tui {
     /// The last terminal size seen. This is updated on every `render` call.
     size: Rect,
     state: TuiState,
+    action_sender: tokio::sync::mpsc::Sender<WatcherEvent>,
 }
 
 impl Deref for Tui {
@@ -114,12 +147,17 @@ impl DerefMut for Tui {
 }
 
 impl Tui {
-    fn new(mut terminal: TerminalGuard) -> Self {
+    fn new(
+        mut terminal: TerminalGuard,
+        actions: Vec<TuiAction>,
+        action_sender: tokio::sync::mpsc::Sender<WatcherEvent>,
+    ) -> Self {
         let area = terminal.get_frame().size();
         Self {
             terminal,
             size: area,
-            state: Default::default(),
+            state: TuiState::new(actions),
+            action_sender,
         }
     }
 
@@ -180,7 +218,7 @@ impl Tui {
     }
 
     #[instrument(level = "trace", skip(self))]
-    fn handle_event(&mut self, event: Event) -> miette::Result<()> {
+    async fn handle_event(&mut self, event: Event) -> miette::Result<()> {
         // TODO: Steal Evan's declarative key matching macros?
         // https://github.com/evanrelf/indigo/blob/7a5e8e47291585cae03cdf5a7c47ad3bcd8db3e6/crates/indigo-tui/src/key/macros.rs
         match event {
@@ -203,11 +241,64 @@ impl Tui {
                 (KeyModifiers::CONTROL, KeyCode::Char('c')) => self.quit = true,
                 (KeyModifiers::NONE, KeyCode::Char('`')) => self.debug = false,
                 (KeyModifiers::SHIFT, KeyCode::Char('`' | '~')) => self.debug = true,
+                (KeyModifiers::NONE, KeyCode::Char('a')) => {
+                    self.show_actions = !self.show_actions;
+                }
+                (KeyModifiers::NONE, KeyCode::Char('q')) => {
+                    if self.quit_confirm {
+                        // Second 'q' - actually quit
+                        self.quit = true;
+                    } else {
+                        // First 'q' - ask for confirmation
+                        self.quit_confirm = true;
+                    }
+                }
+                (KeyModifiers::NONE, KeyCode::Char('y')) if self.quit_confirm => {
+                    // 'y' to confirm quit
+                    self.quit = true;
+                }
+                (KeyModifiers::NONE, KeyCode::Char(_)) if self.quit_confirm => {
+                    // Any other key cancels quit
+                    self.quit_confirm = false;
+                }
+                (KeyModifiers::NONE, KeyCode::Char(c @ '1'..='9')) => {
+                    self.quit_confirm = false; // Cancel quit on action trigger
+                    let index = (c as usize) - ('1' as usize);
+                    if let Some(action) = self.state.actions.get(index).cloned() {
+                        self.trigger_action(action.command).await?;
+                    }
+                }
                 _ => {}
             },
             _ => {}
         }
 
+        Ok(())
+    }
+
+    async fn trigger_action(&self, command: TuiActionCommand) -> miette::Result<()> {
+        use miette::IntoDiagnostic;
+        let event = match command {
+            TuiActionCommand::Shell(cmd) => {
+                tracing::info!(%cmd, "Triggering TUI shell action");
+                WatcherEvent::Action { command: cmd }
+            }
+            TuiActionCommand::Internal(cmd) => {
+                tracing::info!(%cmd, "Triggering TUI internal action");
+                let internal_cmd = match cmd.as_str() {
+                    "toggle-track-warnings" => InternalCommand::ToggleTrackWarnings,
+                    "toggle-no-load" => InternalCommand::ToggleNoLoad,
+                    _ => {
+                        tracing::error!(%cmd, "Unknown internal command");
+                        return Err(miette::miette!("Unknown internal command: {}", cmd));
+                    }
+                };
+                WatcherEvent::Internal {
+                    command: internal_cmd,
+                }
+            }
+        };
+        self.action_sender.send(event).await.into_diagnostic()?;
         Ok(())
     }
 }
@@ -218,12 +309,14 @@ pub async fn run_tui(
     mut shutdown: ShutdownHandle,
     ghci_reader: DuplexStream,
     tracing_reader: DuplexStream,
+    actions: Vec<TuiAction>,
+    action_sender: tokio::sync::mpsc::Sender<WatcherEvent>,
 ) -> miette::Result<()> {
     let mut ghci_reader = BufReader::new(ghci_reader).lines();
     let mut tracing_reader = BufReader::new(tracing_reader).lines();
 
     let terminal = terminal::enter()?;
-    let mut tui = Tui::new(terminal);
+    let mut tui = Tui::new(terminal, actions, action_sender);
 
     let mut event_stream = EventStream::new();
 
@@ -263,7 +356,7 @@ pub async fn run_tui(
                     .wrap_err("Failed to get next crossterm event")?;
                 // TODO: `get_frame` is an expensive call, delay if possible.
                 // https://github.com/MercuryTechnologies/ghciwatch/pull/206#discussion_r1508364135
-                tui.handle_event(event)?;
+                tui.handle_event(event).await?;
             }
         }
     }

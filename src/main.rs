@@ -63,9 +63,11 @@ async fn main() -> miette::Result<()> {
             maybe_tracing_reader.expect("`tracing_reader` must be present if `tui` is given");
         let ghci_reader =
             maybe_ghci_reader.expect("`tui_reader` must be present if `tui` is given");
+        let actions = opts.tui_opts.get_actions();
+        let action_sender = ghci_sender.clone();
         manager
             .spawn("run_tui", |handle| {
-                run_tui(handle, ghci_reader, tracing_reader)
+                run_tui(handle, ghci_reader, tracing_reader, actions, action_sender)
             })
             .await;
     }

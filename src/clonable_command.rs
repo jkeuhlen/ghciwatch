@@ -147,6 +147,26 @@ impl ClonableCommand {
     pub fn as_tokio(&self) -> Command {
         self.as_std().into()
     }
+
+    /// Check if this command contains a specific argument.
+    pub fn has_arg(&self, needle: &str) -> bool {
+        self.args.iter().any(|arg| arg == needle)
+    }
+
+    /// Add an argument if it's not already present.
+    pub fn add_arg_if_missing(mut self, arg: impl Into<OsString>) -> Self {
+        let arg = arg.into();
+        if !self.args.contains(&arg) {
+            self.args.push(arg);
+        }
+        self
+    }
+
+    /// Remove all occurrences of a specific argument.
+    pub fn remove_arg(mut self, needle: &str) -> Self {
+        self.args.retain(|arg| arg != needle);
+        self
+    }
 }
 
 impl FromStr for ClonableCommand {

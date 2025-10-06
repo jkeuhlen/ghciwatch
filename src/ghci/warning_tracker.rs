@@ -31,6 +31,12 @@ impl WarningTracker {
         }
     }
 
+    /// Clear all tracked warnings.
+    pub fn clear(&mut self) {
+        self.warnings.clear();
+        self.current_changed_files.clear();
+    }
+
     /// Reset the list of files that were directly changed.
     /// This should be called at the start of each reload operation.
     pub fn reset_changed_files(&mut self) {
