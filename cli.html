@@ -241,6 +241,15 @@ when source files change.</p>
 <p>Don’t interrupt reloads when files change.</p>
 <p>Depending on your workflow, <code>ghciwatch</code> may feel more responsive with this set.</p>
 </dd>
+</dl>
+<h2 id="tui-options"><a class="header" href="#tui-options">TUI options</a></h2>
+<dl>
+<dt><a id="--tui-action" href="#--tui-action"><code>--tui-action &lt;LABEL:SHELL_COMMAND&gt;</code></a></dt><dd>
+<p>Define custom actions for TUI mode.</p>
+<p>Format: <code>LABEL:SHELL_COMMAND</code>. The label will be shown in the TUI, and the shell command will be executed when the action is triggered using number keys (1-9).</p>
+<p>Example: <code>--tui-action "Reload All:git diff --name-only | xargs touch"</code></p>
+<p>Can be given multiple times (up to 9 actions).</p>
+</dd>
 <dt><a id="--track-warnings" href="#--track-warnings"><code>--track-warnings</code></a></dt><dd>
 <p>Track warnings across recompilations.</p>
 <p>When enabled, warnings will be preserved in memory even when files are recompiled due to dependency changes, helping prevent “ephemeral warnings” from being missed.</p>
