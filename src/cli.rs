@@ -96,6 +96,10 @@ pub struct Opts {
     #[arg(long, hide = true)]
     pub tui: bool,
 
+    /// Options for TUI mode.
+    #[command(flatten)]
+    pub tui_opts: TuiOpts,
+
     /// Track warnings across recompilations.
     ///
     /// When enabled, warnings will be preserved in memory even when files are recompiled
@@ -247,6 +251,77 @@ pub struct LoggingOpts {
     pub log_json: Option<Utf8PathBuf>,
 }
 
+/// Options for TUI mode.
+#[derive(Debug, Clone, clap::Args)]
+#[clap(next_help_heading = "TUI options")]
+pub struct TuiOpts {
+    /// Define custom actions for TUI mode.
+    ///
+    /// Format: `LABEL:SHELL_COMMAND`. The label will be shown in the TUI, and the shell command
+    /// will be executed when the action is triggered using number keys (1-9).
+    ///
+    /// Example: `--tui-action "Reload All:git diff --name-only | xargs touch"`
+    ///
+    /// Can be given multiple times (up to 9 actions).
+    #[arg(long = "tui-action", value_name = "LABEL:SHELL_COMMAND")]
+    pub actions: Vec<TuiAction>,
+}
+
+impl TuiOpts {
+    /// Get all actions, including the default ones.
+    pub fn get_actions(&self) -> Vec<TuiAction> {
+        let mut actions = vec![TuiAction::default_reload_all()];
+        actions.extend(self.actions.clone());
+        actions.truncate(9); // Maximum of 9 actions (keys 1-9)
+        actions
+    }
+}
+
+impl Default for TuiOpts {
+    fn default() -> Self {
+        Self {
+            actions: Vec::new(),
+        }
+    }
+}
+
+/// A user-configurable action in TUI mode.
+#[derive(Debug, Clone)]
+pub struct TuiAction {
+    /// The label to display in the TUI.
+    pub label: String,
+    /// The shell command to execute.
+    pub command: String,
+}
+
+impl TuiAction {
+    /// The default "Reload All" action.
+    pub fn default_reload_all() -> Self {
+        Self {
+            label: "Reload All".to_string(),
+            command: "git diff --name-only | xargs touch".to_string(),
+        }
+    }
+}
+
+impl std::str::FromStr for TuiAction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid TUI action format '{}'. Expected 'LABEL:SHELL_COMMAND'",
+                s
+            ));
+        }
+        Ok(Self {
+            label: parts[0].trim().to_string(),
+            command: parts[1].trim().to_string(),
+        })
+    }
+}
+
 impl Opts {
     /// Perform late initialization of the command-line arguments. If `init` isn't called before
     /// the arguments are used, the behavior is undefined.
@@ -262,5 +337,85 @@ impl Opts {
         std::env::set_var("RUST_BACKTRACE", self.logging.backtrace.to_string());
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tui_action_from_str_valid() {
+        let action: TuiAction = "Reload All:git diff --name-only | xargs touch"
+            .parse()
+            .unwrap();
+        assert_eq!(action.label, "Reload All");
+        assert_eq!(action.command, "git diff --name-only | xargs touch");
+    }
+
+    #[test]
+    fn test_tui_action_from_str_with_spaces() {
+        let action: TuiAction = "My Action  :  echo hello  ".parse().unwrap();
+        assert_eq!(action.label, "My Action");
+        assert_eq!(action.command, "echo hello");
+    }
+
+    #[test]
+    fn test_tui_action_from_str_with_colon_in_command() {
+        let action: TuiAction = "Run Test:cabal test --test-option=--match=/Foo/Bar:"
+            .parse()
+            .unwrap();
+        assert_eq!(action.label, "Run Test");
+        assert_eq!(action.command, "cabal test --test-option=--match=/Foo/Bar:");
+    }
+
+    #[test]
+    fn test_tui_action_from_str_invalid() {
+        let result: Result<TuiAction, _> = "InvalidAction".parse();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Expected 'LABEL:SHELL_COMMAND'"));
+    }
+
+    #[test]
+    fn test_tui_action_default_reload_all() {
+        let action = TuiAction::default_reload_all();
+        assert_eq!(action.label, "Reload All");
+        assert_eq!(action.command, "git diff --name-only | xargs touch");
+    }
+
+    #[test]
+    fn test_tui_opts_get_actions_default_only() {
+        let opts = TuiOpts::default();
+        let actions = opts.get_actions();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].label, "Reload All");
+    }
+
+    #[test]
+    fn test_tui_opts_get_actions_with_custom() {
+        let opts = TuiOpts {
+            actions: vec![
+                "Custom 1:echo one".parse().unwrap(),
+                "Custom 2:echo two".parse().unwrap(),
+            ],
+        };
+        let actions = opts.get_actions();
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[0].label, "Reload All");
+        assert_eq!(actions[1].label, "Custom 1");
+        assert_eq!(actions[2].label, "Custom 2");
+    }
+
+    #[test]
+    fn test_tui_opts_get_actions_truncates_at_nine() {
+        let opts = TuiOpts {
+            actions: (1..=10)
+                .map(|i| format!("Action {}:echo {}", i, i).parse().unwrap())
+                .collect(),
+        };
+        let actions = opts.get_actions();
+        assert_eq!(actions.len(), 9); // 1 default + 8 custom (truncated from 10)
     }
 }

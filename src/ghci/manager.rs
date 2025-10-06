@@ -21,7 +21,7 @@ use super::Ghci;
 use super::GhciOpts;
 use super::GhciReloadKind;
 
-/// An event sent to [`Ghci`] by the watcher.
+/// An event sent to [`Ghci`] by the watcher or TUI.
 #[derive(Debug, Clone)]
 pub enum WatcherEvent {
     /// Reload the `ghci` session.
@@ -29,21 +29,32 @@ pub enum WatcherEvent {
         /// The file events to respond to.
         events: BTreeSet<FileEvent>,
     },
+    /// Execute a user-defined action from the TUI.
+    Action {
+        /// The shell command to execute.
+        command: String,
+    },
 }
 
 impl WatcherEvent {
     /// When we interrupt an event to reload, add the file events together so that we don't lose
     /// work.
     fn merge(&mut self, other: WatcherEvent) {
-        match (self, other) {
+        match (&mut *self, &other) {
             (
                 WatcherEvent::Reload { events },
                 WatcherEvent::Reload {
                     events: other_events,
                 },
             ) => {
-                events.extend(other_events);
+                events.extend(other_events.clone());
             }
+            // Actions can't be merged, just replace with the newer one
+            (_, WatcherEvent::Action { .. }) => {
+                *self = other;
+            }
+            // If we have an action and get a reload, keep the action
+            (WatcherEvent::Action { .. }, WatcherEvent::Reload { .. }) => {}
         }
     }
 }
@@ -150,6 +161,35 @@ async fn dispatch(
     match event {
         WatcherEvent::Reload { events } => {
             ghci.lock().await.reload(events, reload_sender).await?;
+        }
+        WatcherEvent::Action { command } => {
+            use miette::IntoDiagnostic;
+            tracing::info!(%command, "Executing TUI action");
+
+            // Execute the shell command
+            let output = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(&command)
+                .output()
+                .await
+                .into_diagnostic()
+                .wrap_err("Failed to execute TUI action")?;
+
+            if !output.status.success() {
+                tracing::error!(
+                    status = ?output.status,
+                    stderr = %String::from_utf8_lossy(&output.stderr),
+                    "TUI action failed"
+                );
+            } else {
+                tracing::debug!(
+                    stdout = %String::from_utf8_lossy(&output.stdout),
+                    "TUI action completed successfully"
+                );
+            }
+
+            // Notify that we're done (no reload needed)
+            let _ = reload_sender.send(GhciReloadKind::None);
         }
     }
     Ok(())
