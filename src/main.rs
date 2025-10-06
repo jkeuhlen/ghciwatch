@@ -53,7 +53,7 @@ async fn main() -> miette::Result<()> {
 
     let (ghci_sender, ghci_receiver) = mpsc::channel(32);
 
-    let (ghci_opts, maybe_ghci_reader) = GhciOpts::from_cli(&opts)?;
+    let (ghci_opts, maybe_ghci_reader) = GhciOpts::from_cli(&opts).await?;
     let watcher_opts = WatcherOpts::from_cli(&opts);
 
     let mut manager = ShutdownManager::with_timeout(Duration::from_secs(1));

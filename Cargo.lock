@@ -846,6 +846,7 @@ dependencies = [
  "strip-ansi-escapes",
  "supports-color 2.1.0",
  "tap",
+ "tempfile",
  "test-harness",
  "textwrap 0.16.2",
  "tokio",

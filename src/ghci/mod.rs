@@ -15,6 +15,7 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::time::Instant;
+use tokio::fs::OpenOptions;
 use tokio::io::DuplexStream;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -138,7 +139,7 @@ impl GhciOpts {
     ///
     /// If running in TUI mode, `ghci` output (from `stdout_writer` and `stderr_writer`) is sent to
     /// the stream given by the second return value.
-    pub fn from_cli(opts: &Opts) -> miette::Result<(Self, Option<DuplexStream>)> {
+    pub async fn from_cli(opts: &Opts) -> miette::Result<(Self, Option<DuplexStream>)> {
         // TODO: implement fancier default command
         // See: https://github.com/ndmitchell/ghcid/blob/e2852979aa644c8fed92d46ab529d2c6c1c62b59/src/Ghcid.hs#L142-L171
         let command = match (&opts.file, &opts.command) {
@@ -155,11 +156,35 @@ impl GhciOpts {
         if opts.tui {
             let (tui_writer, tui_reader_inner) = tokio::io::duplex(GHCI_BUFFER_CAPACITY);
             let tui_writer = GhciWriter::duplex_stream(tui_writer);
-            stdout_writer = tui_writer.clone();
+            stdout_writer = if let Some(ref output_path) = opts.output_file {
+                let file = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(output_path)
+                    .await
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("Failed to open output file: {}", output_path))?;
+                GhciWriter::tee(tui_writer.clone(), file)
+            } else {
+                tui_writer.clone()
+            };
             stderr_writer = tui_writer.clone();
             tui_reader = Some(tui_reader_inner);
         } else {
-            stdout_writer = GhciWriter::stdout();
+            stdout_writer = if let Some(ref output_path) = opts.output_file {
+                let file = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(output_path)
+                    .await
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("Failed to open output file: {}", output_path))?;
+                GhciWriter::tee(GhciWriter::stdout(), file)
+            } else {
+                GhciWriter::stdout()
+            };
             stderr_writer = GhciWriter::stderr();
             tui_reader = None;
         }
