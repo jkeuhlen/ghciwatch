@@ -252,7 +252,7 @@ pub struct LoggingOpts {
 }
 
 /// Options for TUI mode.
-#[derive(Debug, Clone, clap::Args)]
+#[derive(Debug, Clone, Default, clap::Args)]
 #[clap(next_help_heading = "TUI options")]
 pub struct TuiOpts {
     /// Define custom actions for TUI mode.
@@ -278,14 +278,6 @@ impl TuiOpts {
         actions.extend(self.actions.clone());
         actions.truncate(9); // Maximum of 9 actions (keys 1-9)
         actions
-    }
-}
-
-impl Default for TuiOpts {
-    fn default() -> Self {
-        Self {
-            actions: Vec::new(),
-        }
     }
 }
 
