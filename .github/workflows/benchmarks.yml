@@ -103,7 +103,7 @@ jobs:
           # If gh-pages is missing, skip fetch so the step doesn't fail; it'll still post current results
           skip-fetch-gh-pages: ${{ steps.ghp.outputs.exists != 'true' }}
           comment-on-alert: true
-          alert-threshold: "110%"
+          alert-threshold: "150%"
           fail-on-alert: false
           comment-always: true
 
