@@ -26,7 +26,7 @@ api-docs:
 
 # Lint Rust code with clippy
 lint:
-    cargo clippy
+    cargo clippy --all-targets
 
 # Format Rust code
 format:

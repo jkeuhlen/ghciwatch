@@ -1,0 +1,35 @@
+src/Main.hs:5:1: warning: [-Wunused-imports]
+    The import of 'Data.List' is redundant
+   |
+5 | import Data.List
+  | ^^^^^^^^^^^^^^^^
+
+src/Main.hs:10:1: warning: [-Wunused-top-binds]
+    Defined but not used: 'helper'
+   |
+10 | helper x = x + 1
+   | ^^^^^^
+
+src/Types.hs:15:5: warning: [-Wname-shadowing]
+    This binding for 'x' shadows the existing binding
+      bound at src/Types.hs:10:9
+   |
+15 |     x = 10
+   |     ^
+
+src/Utils.hs:20:1: warning: [-Wmissing-signatures]
+    Top-level binding with no type signature:
+      processData :: String -> IO ()
+   |
+20 | processData input = putStrLn $ "Processing: " ++ input
+   | ^^^^^^^^^^^
+
+src/Parser.hs:30:10: warning: [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In an equation for 'parse':
+        Patterns of type 'Token' not matched:
+            TokError _
+   |
+30 | parse TokString s = StringVal s
+31 | parse TokNumber n = NumberVal n
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
