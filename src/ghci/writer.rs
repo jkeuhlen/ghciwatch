@@ -77,11 +77,11 @@ impl AsyncWrite for GhciWriter {
                 if let Some(mut guard) = file.try_lock() {
                     // If we can lock the file, try to write to it
                     match Pin::new(&mut *guard).poll_write(cx, buf) {
-                        Poll::Ready(Ok(_)) => {},
+                        Poll::Ready(Ok(_)) => {}
                         Poll::Ready(Err(e)) => {
                             tracing::warn!("Failed to write to output file: {e}");
                         }
-                        Poll::Pending => {},
+                        Poll::Pending => {}
                     }
                 }
 
@@ -102,11 +102,11 @@ impl AsyncWrite for GhciWriter {
 
                 if let Some(mut guard) = file.try_lock() {
                     match Pin::new(&mut *guard).poll_flush(cx) {
-                        Poll::Ready(Ok(_)) => {},
+                        Poll::Ready(Ok(_)) => {}
                         Poll::Ready(Err(e)) => {
                             tracing::warn!("Failed to flush output file: {e}");
                         }
-                        Poll::Pending => {},
+                        Poll::Pending => {}
                     }
                 }
 
@@ -127,11 +127,11 @@ impl AsyncWrite for GhciWriter {
 
                 if let Some(mut guard) = file.try_lock() {
                     match Pin::new(&mut *guard).poll_shutdown(cx) {
-                        Poll::Ready(Ok(_)) => {},
+                        Poll::Ready(Ok(_)) => {}
                         Poll::Ready(Err(e)) => {
                             tracing::warn!("Failed to shutdown output file: {e}");
                         }
-                        Poll::Pending => {},
+                        Poll::Pending => {}
                     }
                 }
 
@@ -181,7 +181,10 @@ mod tests {
 
         // Verify the data was written to the console (duplex stream)
         let mut console_buffer = vec![0u8; test_data.len()];
-        console_reader.read_exact(&mut console_buffer).await.unwrap();
+        console_reader
+            .read_exact(&mut console_buffer)
+            .await
+            .unwrap();
         assert_eq!(&console_buffer, test_data);
 
         // Close the writer to ensure file is flushed
