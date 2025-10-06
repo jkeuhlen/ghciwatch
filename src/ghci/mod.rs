@@ -1027,7 +1027,8 @@ impl Ghci {
         if had_no_load {
             self.opts.command = self.opts.command.clone().remove_arg("--repl-no-load");
             tracing::info!("No-load mode disabled");
-            let message = "\n[ghciwatch] No-load mode disabled (modules will be loaded at startup)\n";
+            let message =
+                "\n[ghciwatch] No-load mode disabled (modules will be loaded at startup)\n";
             self.opts
                 .stdout_writer
                 .write_all(message.as_bytes())

@@ -421,16 +421,12 @@ mod tests {
     fn test_tui_action_from_str_invalid() {
         let result: Result<TuiAction, _> = "InvalidAction".parse();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Expected 'LABEL:COMMAND'"));
+        assert!(result.unwrap_err().contains("Expected 'LABEL:COMMAND'"));
     }
 
     #[test]
     fn test_tui_action_from_str_internal() {
-        let action: TuiAction = "Toggle Warnings:@toggle-track-warnings"
-            .parse()
-            .unwrap();
+        let action: TuiAction = "Toggle Warnings:@toggle-track-warnings".parse().unwrap();
         assert_eq!(action.label, "Toggle Warnings");
         assert!(matches!(
             action.command,
