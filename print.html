@@ -291,6 +291,10 @@ when source files change.</p>
 <p>A file to write compilation errors to.</p>
 <p>The output format is compatible with <code>ghcid</code>’s <code>--outputfile</code> option.</p>
 </dd>
+<dt><a id="-o" href="cli.html#-o"><code>-o &lt;FILE&gt;</code></a><a id="--output" href="cli.html#--output"><code>--output &lt;FILE&gt;</code></a></dt><dd>
+<p>A file to write GHCi stdout output to.</p>
+<p>Output will be duplicated to both the console/TUI and this file. This is especially useful when paired with “allow-eval” for diverting test output.</p>
+</dd>
 <dt><a id="--enable-eval" href="cli.html#--enable-eval"><code>--enable-eval</code></a></dt><dd>
 <p>Evaluate Haskell code in comments.</p>
 <p>This parses line commands starting with <code>-- $&gt;</code> or multiline commands delimited by <code>{- $&gt;</code> and <code>&lt;$ -}</code> and evaluates them after reloads.</p>
