@@ -299,7 +299,8 @@ impl TuiAction {
     pub fn default_reload_all() -> Self {
         Self {
             label: "Reload All".to_string(),
-            command: "git diff --name-only | xargs touch".to_string(),
+            // Run from git root to ensure paths are correct
+            command: "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch".to_string(),
         }
     }
 }
@@ -382,7 +383,7 @@ mod tests {
     fn test_tui_action_default_reload_all() {
         let action = TuiAction::default_reload_all();
         assert_eq!(action.label, "Reload All");
-        assert_eq!(action.command, "git diff --name-only | xargs touch");
+        assert_eq!(action.command, "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch");
     }
 
     #[test]

@@ -95,8 +95,13 @@ ghciwatch --tui \
 
 By default, the TUI includes a "Reload All" action (key `1`) that reloads all files that have changed in git:
 ```bash
-git diff --name-only | xargs touch
+cd "$(git rev-parse --show-toplevel)" && git diff --name-only | xargs -r touch
 ```
+
+This command:
+- Changes to the git root directory to ensure paths are correct
+- Lists all modified files according to git
+- Touches them to trigger a reload (the `-r` flag prevents errors if there are no changes)
 
 ### Using Actions
 
