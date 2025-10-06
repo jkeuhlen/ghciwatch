@@ -46,6 +46,14 @@ when source files change.
   - Eval comments have access to the top-level bindings of the module they're
     defined in, including unexported bindings.
   - Multi-line eval comments are supported with `{- $> ... <$ -}`.
+- [**Experimental TUI Mode**](docs/tui.md) provides an interactive terminal
+  interface with user-configurable actions.
+  - Trigger custom shell commands or internal settings with keyboard shortcuts
+  - Built-in actions for reloading changed files and toggling warnings
+  - Vim-style navigation and minimal screen usage
+- [**Fast reloads for large projects**](docs/no-load.md) using `--repl-no-load`.
+  - Start GHCi with no modules loaded, then load only what you're working on
+  - Significantly faster reload times in projects with thousands of modules
 
 [ghcid]: https://github.com/ndmitchell/ghcid
 [hpack]: https://github.com/sol/hpack

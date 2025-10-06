@@ -270,7 +270,11 @@ pub struct TuiOpts {
 impl TuiOpts {
     /// Get all actions, including the default ones.
     pub fn get_actions(&self) -> Vec<TuiAction> {
-        let mut actions = vec![TuiAction::default_reload_all()];
+        let mut actions = vec![
+            TuiAction::default_reload_all(),
+            TuiAction::default_toggle_warnings(),
+            TuiAction::default_toggle_no_load(),
+        ];
         actions.extend(self.actions.clone());
         actions.truncate(9); // Maximum of 9 actions (keys 1-9)
         actions
@@ -290,8 +294,17 @@ impl Default for TuiOpts {
 pub struct TuiAction {
     /// The label to display in the TUI.
     pub label: String,
-    /// The shell command to execute.
-    pub command: String,
+    /// The command to execute (either shell or internal).
+    pub command: TuiActionCommand,
+}
+
+/// The command to execute for a TUI action.
+#[derive(Debug, Clone)]
+pub enum TuiActionCommand {
+    /// A shell command to execute.
+    Shell(String),
+    /// An internal ghciwatch command.
+    Internal(String),
 }
 
 impl TuiAction {
@@ -300,7 +313,26 @@ impl TuiAction {
         Self {
             label: "Reload All".to_string(),
             // Run from git root to ensure paths are correct
-            command: "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch".to_string(),
+            command: TuiActionCommand::Shell(
+                "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch"
+                    .to_string(),
+            ),
+        }
+    }
+
+    /// The default "Toggle Warnings" action.
+    pub fn default_toggle_warnings() -> Self {
+        Self {
+            label: "Toggle Warnings".to_string(),
+            command: TuiActionCommand::Internal("toggle-track-warnings".to_string()),
+        }
+    }
+
+    /// The default "Toggle No-Load" action.
+    pub fn default_toggle_no_load() -> Self {
+        Self {
+            label: "Toggle No-Load".to_string(),
+            command: TuiActionCommand::Internal("toggle-no-load".to_string()),
         }
     }
 }
@@ -312,14 +344,20 @@ impl std::str::FromStr for TuiAction {
         let parts: Vec<&str> = s.splitn(2, ':').collect();
         if parts.len() != 2 {
             return Err(format!(
-                "Invalid TUI action format '{}'. Expected 'LABEL:SHELL_COMMAND'",
+                "Invalid TUI action format '{}'. Expected 'LABEL:COMMAND' or 'LABEL:@INTERNAL_COMMAND'",
                 s
             ));
         }
-        Ok(Self {
-            label: parts[0].trim().to_string(),
-            command: parts[1].trim().to_string(),
-        })
+        let label = parts[0].trim().to_string();
+        let command_str = parts[1].trim();
+
+        let command = if let Some(internal_cmd) = command_str.strip_prefix('@') {
+            TuiActionCommand::Internal(internal_cmd.to_string())
+        } else {
+            TuiActionCommand::Shell(command_str.to_string())
+        };
+
+        Ok(Self { label, command })
     }
 }
 
@@ -351,14 +389,20 @@ mod tests {
             .parse()
             .unwrap();
         assert_eq!(action.label, "Reload All");
-        assert_eq!(action.command, "git diff --name-only | xargs touch");
+        assert!(matches!(
+            action.command,
+            TuiActionCommand::Shell(ref cmd) if cmd == "git diff --name-only | xargs touch"
+        ));
     }
 
     #[test]
     fn test_tui_action_from_str_with_spaces() {
         let action: TuiAction = "My Action  :  echo hello  ".parse().unwrap();
         assert_eq!(action.label, "My Action");
-        assert_eq!(action.command, "echo hello");
+        assert!(matches!(
+            action.command,
+            TuiActionCommand::Shell(ref cmd) if cmd == "echo hello"
+        ));
     }
 
     #[test]
@@ -367,7 +411,10 @@ mod tests {
             .parse()
             .unwrap();
         assert_eq!(action.label, "Run Test");
-        assert_eq!(action.command, "cabal test --test-option=--match=/Foo/Bar:");
+        assert!(matches!(
+            action.command,
+            TuiActionCommand::Shell(ref cmd) if cmd == "cabal test --test-option=--match=/Foo/Bar:"
+        ));
     }
 
     #[test]
@@ -376,22 +423,59 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .contains("Expected 'LABEL:SHELL_COMMAND'"));
+            .contains("Expected 'LABEL:COMMAND'"));
+    }
+
+    #[test]
+    fn test_tui_action_from_str_internal() {
+        let action: TuiAction = "Toggle Warnings:@toggle-track-warnings"
+            .parse()
+            .unwrap();
+        assert_eq!(action.label, "Toggle Warnings");
+        assert!(matches!(
+            action.command,
+            TuiActionCommand::Internal(ref cmd) if cmd == "toggle-track-warnings"
+        ));
     }
 
     #[test]
     fn test_tui_action_default_reload_all() {
         let action = TuiAction::default_reload_all();
         assert_eq!(action.label, "Reload All");
-        assert_eq!(action.command, "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch");
+        assert!(matches!(
+            action.command,
+            TuiActionCommand::Shell(ref cmd) if cmd == "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch"
+        ));
+    }
+
+    #[test]
+    fn test_tui_action_default_toggle_warnings() {
+        let action = TuiAction::default_toggle_warnings();
+        assert_eq!(action.label, "Toggle Warnings");
+        assert!(matches!(
+            action.command,
+            TuiActionCommand::Internal(ref cmd) if cmd == "toggle-track-warnings"
+        ));
+    }
+
+    #[test]
+    fn test_tui_action_default_toggle_no_load() {
+        let action = TuiAction::default_toggle_no_load();
+        assert_eq!(action.label, "Toggle No-Load");
+        assert!(matches!(
+            action.command,
+            TuiActionCommand::Internal(ref cmd) if cmd == "toggle-no-load"
+        ));
     }
 
     #[test]
     fn test_tui_opts_get_actions_default_only() {
         let opts = TuiOpts::default();
         let actions = opts.get_actions();
-        assert_eq!(actions.len(), 1);
+        assert_eq!(actions.len(), 3);
         assert_eq!(actions[0].label, "Reload All");
+        assert_eq!(actions[1].label, "Toggle Warnings");
+        assert_eq!(actions[2].label, "Toggle No-Load");
     }
 
     #[test]
@@ -403,10 +487,12 @@ mod tests {
             ],
         };
         let actions = opts.get_actions();
-        assert_eq!(actions.len(), 3);
+        assert_eq!(actions.len(), 5);
         assert_eq!(actions[0].label, "Reload All");
-        assert_eq!(actions[1].label, "Custom 1");
-        assert_eq!(actions[2].label, "Custom 2");
+        assert_eq!(actions[1].label, "Toggle Warnings");
+        assert_eq!(actions[2].label, "Toggle No-Load");
+        assert_eq!(actions[3].label, "Custom 1");
+        assert_eq!(actions[4].label, "Custom 2");
     }
 
     #[test]
@@ -417,6 +503,6 @@ mod tests {
                 .collect(),
         };
         let actions = opts.get_actions();
-        assert_eq!(actions.len(), 9); // 1 default + 8 custom (truncated from 10)
+        assert_eq!(actions.len(), 9); // 3 default + 6 custom (truncated from 10)
     }
 }

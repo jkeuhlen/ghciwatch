@@ -985,6 +985,74 @@ impl Ghci {
         Ok(())
     }
 
+    /// Toggle the `track_warnings` setting and restart the session.
+    pub async fn toggle_track_warnings(&mut self) -> miette::Result<()> {
+        let old_value = self.opts.track_warnings;
+        self.opts.track_warnings = !old_value;
+
+        let status = if self.opts.track_warnings {
+            "enabled"
+        } else {
+            "disabled"
+        };
+
+        tracing::info!("Warning tracking {status}");
+
+        // Write status message to user
+        use miette::IntoDiagnostic;
+        use tokio::io::AsyncWriteExt;
+        let message = format!("\n[ghciwatch] Warning tracking {status}\n");
+        self.opts
+            .stdout_writer
+            .write_all(message.as_bytes())
+            .await
+            .into_diagnostic()
+            .wrap_err("Failed to write status message")?;
+
+        // If we're disabling warnings, clear the warning tracker
+        if !self.opts.track_warnings {
+            self.warning_tracker.clear();
+        }
+
+        Ok(())
+    }
+
+    /// Toggle the `--repl-no-load` flag in the GHCi command and restart the session.
+    pub async fn toggle_no_load(&mut self) -> miette::Result<()> {
+        use miette::IntoDiagnostic;
+        use tokio::io::AsyncWriteExt;
+
+        let had_no_load = self.opts.command.has_arg("--repl-no-load");
+
+        if had_no_load {
+            self.opts.command = self.opts.command.clone().remove_arg("--repl-no-load");
+            tracing::info!("No-load mode disabled");
+            let message = "\n[ghciwatch] No-load mode disabled (modules will be loaded at startup)\n";
+            self.opts
+                .stdout_writer
+                .write_all(message.as_bytes())
+                .await
+                .into_diagnostic()
+                .wrap_err("Failed to write status message")?;
+        } else {
+            self.opts.command = self
+                .opts
+                .command
+                .clone()
+                .add_arg_if_missing("--repl-no-load");
+            tracing::info!("No-load mode enabled");
+            let message = "\n[ghciwatch] No-load mode enabled (modules will be loaded on-demand)\n";
+            self.opts
+                .stdout_writer
+                .write_all(message.as_bytes())
+                .await
+                .into_diagnostic()
+                .wrap_err("Failed to write status message")?;
+        }
+
+        Ok(())
+    }
+
     /// Make a path relative to the `ghci` session's current working directory.
     fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
         self.search_paths.make_relative(path)

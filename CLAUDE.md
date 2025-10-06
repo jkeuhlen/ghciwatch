@@ -54,8 +54,8 @@ The codebase follows a modular architecture with clear separation of concerns:
 
 4. **TUI (Terminal UI)** (`src/tui/`): Optional terminal interface for displaying compilation results in a structured format using ratatui.
    - Supports user-configurable actions accessible via number keys (1-9)
-   - Actions are shell commands that can be triggered from the TUI interface
-   - Default action includes "Reload All" which touches all changed git files
+   - Actions can be shell commands or internal commands that modify runtime settings
+   - See [docs/tui.md](docs/tui.md) for detailed TUI documentation
 
 ### Key Architectural Patterns
 
@@ -72,51 +72,11 @@ The codebase follows a modular architecture with clear separation of concerns:
 4. Lifecycle hooks execute at appropriate points
 5. TUI (if enabled) continuously updates display with latest compilation state
 
-## TUI Custom Actions
+## TUI Mode and No-Load Mode
 
-The TUI mode supports user-configurable actions that can be triggered via keyboard shortcuts. This makes it easy to run common workspace-specific commands without leaving ghciwatch.
-
-### Usage
-
-Add custom actions with the `--tui-action` flag:
-
-```bash
-# Single custom action
-ghciwatch --tui --tui-action "Run Tests:cabal test"
-
-# Multiple custom actions
-ghciwatch --tui \
-  --tui-action "Run Tests:cabal test" \
-  --tui-action "Format Code:fourmolu -i src/" \
-  --tui-action "Check Types:cabal build --ghc-options=-fno-code"
-```
-
-### Default Actions
-
-By default, the TUI includes a "Reload All" action (key `1`) that reloads all files that have changed in git:
-```bash
-cd "$(git rev-parse --show-toplevel)" && git diff --name-only | xargs -r touch
-```
-
-This command:
-- Changes to the git root directory to ensure paths are correct
-- Lists all modified files according to git
-- Touches them to trigger a reload (the `-r` flag prevents errors if there are no changes)
-
-### Using Actions
-
-- Press `a` to toggle the action list visibility
-- Press number keys `1-9` to trigger the corresponding action
-- The action list shows at the bottom of the TUI display
-- Maximum of 9 actions can be defined (including the default)
-
-### Action Format
-
-Actions are defined as `LABEL:SHELL_COMMAND`:
-- `LABEL`: Text shown in the TUI interface
-- `SHELL_COMMAND`: Any valid shell command to execute
-
-The commands are run through `sh -c`, so shell features like pipes and redirection work as expected.
+For detailed information about these advanced features, see:
+- [docs/tui.md](docs/tui.md) - Interactive TUI mode with custom actions (includes toggle for no-load mode)
+- [docs/no-load.md](docs/no-load.md) - Fast reloads using `--repl-no-load`
 
 ## Development Notes
 

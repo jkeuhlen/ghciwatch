@@ -27,8 +27,8 @@ use tracing::instrument;
 mod terminal;
 
 use crate::buffers::TUI_SCROLLBACK_CAPACITY;
-use crate::cli::TuiAction;
-use crate::ghci::manager::WatcherEvent;
+use crate::cli::{TuiAction, TuiActionCommand};
+use crate::ghci::manager::{InternalCommand, WatcherEvent};
 use crate::ShutdownHandle;
 use terminal::TerminalGuard;
 
@@ -45,6 +45,7 @@ struct TuiState {
     scroll_offset: Saturating<usize>,
     actions: Vec<TuiAction>,
     show_actions: bool,
+    quit_confirm: bool,
 }
 
 impl TuiState {
@@ -57,6 +58,7 @@ impl TuiState {
             scroll_offset: Saturating(0),
             actions,
             show_actions: true,
+            quit_confirm: false,
         }
     }
 
@@ -66,8 +68,9 @@ impl TuiState {
             return Ok(());
         }
 
+        // Actions are shown as a single row at the bottom
         let action_height = if self.show_actions && !self.actions.is_empty() {
-            (self.actions.len() + 2) as u16 // +2 for title and separator
+            1
         } else {
             0
         };
@@ -90,12 +93,21 @@ impl TuiState {
             .scroll((scroll_offset, 0))
             .render(areas[0], buffer);
 
-        // Render actions sidebar
+        // Render actions as a horizontal row
         if self.show_actions && !self.actions.is_empty() {
-            let mut action_text = String::from("Actions (press number key):\n");
-            for (i, action) in self.actions.iter().enumerate() {
-                action_text.push_str(&format!("  {}: {}\n", i + 1, action.label));
-            }
+            let action_text = if self.quit_confirm {
+                "Quit? Press [q] or [y] to confirm, any other key to cancel".to_string()
+            } else {
+                let mut text = String::new();
+                for (i, action) in self.actions.iter().enumerate() {
+                    if i > 0 {
+                        text.push_str(" | ");
+                    }
+                    text.push_str(&format!("[{}] {}", i + 1, action.label));
+                }
+                text.push_str(" | [a] hide | [q] quit");
+                text
+            };
             Paragraph::new(action_text).render(areas[1], buffer);
         }
 
@@ -232,10 +244,28 @@ impl Tui {
                 (KeyModifiers::NONE, KeyCode::Char('a')) => {
                     self.show_actions = !self.show_actions;
                 }
+                (KeyModifiers::NONE, KeyCode::Char('q')) => {
+                    if self.quit_confirm {
+                        // Second 'q' - actually quit
+                        self.quit = true;
+                    } else {
+                        // First 'q' - ask for confirmation
+                        self.quit_confirm = true;
+                    }
+                }
+                (KeyModifiers::NONE, KeyCode::Char('y')) if self.quit_confirm => {
+                    // 'y' to confirm quit
+                    self.quit = true;
+                }
+                (KeyModifiers::NONE, KeyCode::Char(_)) if self.quit_confirm => {
+                    // Any other key cancels quit
+                    self.quit_confirm = false;
+                }
                 (KeyModifiers::NONE, KeyCode::Char(c @ '1'..='9')) => {
+                    self.quit_confirm = false; // Cancel quit on action trigger
                     let index = (c as usize) - ('1' as usize);
-                    if let Some(action) = self.state.actions.get(index) {
-                        self.trigger_action(action.command.clone()).await?;
+                    if let Some(action) = self.state.actions.get(index).cloned() {
+                        self.trigger_action(action.command).await?;
                     }
                 }
                 _ => {}
@@ -246,13 +276,29 @@ impl Tui {
         Ok(())
     }
 
-    async fn trigger_action(&self, command: String) -> miette::Result<()> {
+    async fn trigger_action(&self, command: TuiActionCommand) -> miette::Result<()> {
         use miette::IntoDiagnostic;
-        tracing::info!(%command, "Triggering TUI action");
-        self.action_sender
-            .send(WatcherEvent::Action { command })
-            .await
-            .into_diagnostic()?;
+        let event = match command {
+            TuiActionCommand::Shell(cmd) => {
+                tracing::info!(%cmd, "Triggering TUI shell action");
+                WatcherEvent::Action { command: cmd }
+            }
+            TuiActionCommand::Internal(cmd) => {
+                tracing::info!(%cmd, "Triggering TUI internal action");
+                let internal_cmd = match cmd.as_str() {
+                    "toggle-track-warnings" => InternalCommand::ToggleTrackWarnings,
+                    "toggle-no-load" => InternalCommand::ToggleNoLoad,
+                    _ => {
+                        tracing::error!(%cmd, "Unknown internal command");
+                        return Err(miette::miette!("Unknown internal command: {}", cmd));
+                    }
+                };
+                WatcherEvent::Internal {
+                    command: internal_cmd,
+                }
+            }
+        };
+        self.action_sender.send(event).await.into_diagnostic()?;
         Ok(())
     }
 }
