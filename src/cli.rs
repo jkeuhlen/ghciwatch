@@ -75,6 +75,13 @@ pub struct Opts {
     #[arg(long, alias = "outputfile", alias = "errors")]
     pub error_file: Option<Utf8PathBuf>,
 
+    /// A file to write GHCi stdout output to.
+    ///
+    /// Output will be duplicated to both the console/TUI and this file.
+    /// This is especially useful when paired with "allow-eval" for diverting test output.
+    #[arg(short = 'o', long = "output", value_name = "FILE")]
+    pub output_file: Option<Utf8PathBuf>,
+
     /// Evaluate Haskell code in comments.
     ///
     /// This parses line commands starting with `-- $>` or multiline commands delimited by `{- $>`

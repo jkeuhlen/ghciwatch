@@ -5,6 +5,7 @@ use std::io;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+use tokio::fs::File;
 use tokio::io::AsyncWrite;
 use tokio::io::DuplexStream;
 use tokio::io::Sink;
@@ -25,6 +26,7 @@ enum Kind {
     Stderr(Stderr),
     DuplexStream(Compat<Arc<Mutex<Compat<DuplexStream>>>>),
     Sink(Sink),
+    Tee(Box<GhciWriter>, Arc<Mutex<File>>),
 }
 
 impl GhciWriter {
@@ -49,6 +51,11 @@ impl GhciWriter {
     pub fn sink() -> Self {
         Self(Kind::Sink(tokio::io::sink()))
     }
+
+    /// Write to both the given writer and a file (duplicate output).
+    pub fn tee(writer: Self, file: File) -> Self {
+        Self(Kind::Tee(Box::new(writer), Arc::new(Mutex::new(file))))
+    }
 }
 
 impl AsyncWrite for GhciWriter {
@@ -62,6 +69,24 @@ impl AsyncWrite for GhciWriter {
             Kind::Stderr(ref mut x) => Pin::new(x).poll_write(cx, buf),
             Kind::DuplexStream(ref mut x) => Pin::new(x).poll_write(cx, buf),
             Kind::Sink(ref mut x) => Pin::new(x).poll_write(cx, buf),
+            Kind::Tee(ref mut writer, ref mut file) => {
+                // Write to the primary writer first
+                let primary_result = Pin::new(writer.as_mut()).poll_write(cx, buf);
+
+                // Try to write to the file as well (best-effort)
+                if let Some(mut guard) = file.try_lock() {
+                    // If we can lock the file, try to write to it
+                    match Pin::new(&mut *guard).poll_write(cx, buf) {
+                        Poll::Ready(Ok(_)) => {}
+                        Poll::Ready(Err(e)) => {
+                            tracing::warn!("Failed to write to output file: {e}");
+                        }
+                        Poll::Pending => {}
+                    }
+                }
+
+                primary_result
+            }
         }
     }
 
@@ -71,6 +96,22 @@ impl AsyncWrite for GhciWriter {
             Kind::Stderr(ref mut x) => Pin::new(x).poll_flush(cx),
             Kind::DuplexStream(ref mut x) => Pin::new(x).poll_flush(cx),
             Kind::Sink(ref mut x) => Pin::new(x).poll_flush(cx),
+            Kind::Tee(ref mut writer, ref mut file) => {
+                // Flush both the primary writer and the file
+                let primary_result = Pin::new(writer.as_mut()).poll_flush(cx);
+
+                if let Some(mut guard) = file.try_lock() {
+                    match Pin::new(&mut *guard).poll_flush(cx) {
+                        Poll::Ready(Ok(_)) => {}
+                        Poll::Ready(Err(e)) => {
+                            tracing::warn!("Failed to flush output file: {e}");
+                        }
+                        Poll::Pending => {}
+                    }
+                }
+
+                primary_result
+            }
         }
     }
 
@@ -80,6 +121,22 @@ impl AsyncWrite for GhciWriter {
             Kind::Stderr(ref mut x) => Pin::new(x).poll_shutdown(cx),
             Kind::DuplexStream(ref mut x) => Pin::new(x).poll_shutdown(cx),
             Kind::Sink(ref mut x) => Pin::new(x).poll_shutdown(cx),
+            Kind::Tee(ref mut writer, ref mut file) => {
+                // Shutdown both the primary writer and the file
+                let primary_result = Pin::new(writer.as_mut()).poll_shutdown(cx);
+
+                if let Some(mut guard) = file.try_lock() {
+                    match Pin::new(&mut *guard).poll_shutdown(cx) {
+                        Poll::Ready(Ok(_)) => {}
+                        Poll::Ready(Err(e)) => {
+                            tracing::warn!("Failed to shutdown output file: {e}");
+                        }
+                        Poll::Pending => {}
+                    }
+                }
+
+                primary_result
+            }
         }
     }
 }
@@ -91,6 +148,89 @@ impl Clone for GhciWriter {
             Kind::Stderr(_) => Self::stderr(),
             Kind::DuplexStream(x) => Self(Kind::DuplexStream(x.clone())),
             Kind::Sink(_) => Self::sink(),
+            Kind::Tee(writer, file) => Self(Kind::Tee(writer.clone(), file.clone())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncReadExt;
+    use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn test_tee_writes_to_both_destinations() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_path = temp_dir.path().join("output.txt");
+
+        // Create a duplex stream to simulate console output
+        let (console_writer, mut console_reader) = tokio::io::duplex(1024);
+
+        // Create a file for tee output
+        let output_file = tokio::fs::File::create(&output_path).await.unwrap();
+
+        // Create a tee writer that writes to both
+        let console_ghci = GhciWriter::duplex_stream(console_writer);
+        let mut tee_writer = GhciWriter::tee(console_ghci, output_file);
+
+        // Write some test data
+        let test_data = b"Hello from GHCi!\n";
+        tee_writer.write_all(test_data).await.unwrap();
+        tee_writer.flush().await.unwrap();
+
+        // Verify the data was written to the console (duplex stream)
+        let mut console_buffer = vec![0u8; test_data.len()];
+        console_reader
+            .read_exact(&mut console_buffer)
+            .await
+            .unwrap();
+        assert_eq!(&console_buffer, test_data);
+
+        // Close the writer to ensure file is flushed
+        drop(tee_writer);
+
+        // Verify the data was written to the file
+        let file_contents = tokio::fs::read_to_string(&output_path).await.unwrap();
+        assert_eq!(file_contents.as_bytes(), test_data);
+    }
+
+    #[tokio::test]
+    async fn test_tee_can_be_cloned() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_path = temp_dir.path().join("output.txt");
+
+        let (console_writer, _console_reader) = tokio::io::duplex(1024);
+        let output_file = tokio::fs::File::create(&output_path).await.unwrap();
+
+        let console_ghci = GhciWriter::duplex_stream(console_writer);
+        let tee_writer = GhciWriter::tee(console_ghci, output_file);
+
+        // Clone should work
+        let _cloned_writer = tee_writer.clone();
+
+        // Both writers should share the same underlying file
+        // (this is ensured by Arc<Mutex<File>>)
+    }
+
+    #[tokio::test]
+    async fn test_tee_with_stdout() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_path = temp_dir.path().join("output.txt");
+
+        let output_file = tokio::fs::File::create(&output_path).await.unwrap();
+        let mut tee_writer = GhciWriter::tee(GhciWriter::stdout(), output_file);
+
+        // Write some test data
+        let test_data = b"Testing stdout tee\n";
+        tee_writer.write_all(test_data).await.unwrap();
+        tee_writer.flush().await.unwrap();
+
+        // Close the writer to ensure file is flushed
+        drop(tee_writer);
+
+        // Verify the data was written to the file
+        let file_contents = tokio::fs::read_to_string(&output_path).await.unwrap();
+        assert_eq!(file_contents.as_bytes(), test_data);
     }
 }

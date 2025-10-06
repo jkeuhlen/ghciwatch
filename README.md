@@ -40,6 +40,9 @@ when source files change.
 - Compilation errors can be written to a file with
   [`--error-file`](https://mercurytechnologies.github.io/ghciwatch/cli.html#--error-file),
   for compatibility with [ghcid's][ghcid] `--outputfile` option.
+- GHCi stdout can be written to a file with
+  [`--output`/`-o`](https://mercurytechnologies.github.io/ghciwatch/cli.html#-o---output),
+  allowing you to capture all compilation output, warnings, and results.
 - Comments starting with `-- $>` [can be
   evaluated](https://mercurytechnologies.github.io/ghciwatch/comment-evaluation.html)
   in GHCi.
