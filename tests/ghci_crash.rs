@@ -74,7 +74,10 @@ async fn can_handle_ghci_crash_during_reload() {
         .unwrap();
 
     let status = session.wait_until_exit().await.unwrap();
-    assert!(status.success(), "ghciwatch exits successfully without panicking");
+    assert!(
+        status.success(),
+        "ghciwatch exits successfully without panicking"
+    );
 }
 
 /// Test that `ghciwatch` handles file deletion gracefully without panicking.

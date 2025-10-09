@@ -36,13 +36,11 @@ impl GhciStdin {
     ) -> miette::Result<()> {
         match self.stdin.write_all(line.as_bytes()).await {
             Ok(_) => stdout.prompt(find, log).await,
-            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-                Err(miette::miette!(
-                    "GHCi process stdin closed unexpectedly (broken pipe). \
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
                      This usually happens when GHCi crashes or exits unexpectedly."
-                )
-                .wrap_err(e))
-            }
+            )
+            .wrap_err(e)),
             Err(e) => Err(e).into_diagnostic(),
         }
     }
@@ -173,13 +171,11 @@ impl GhciStdin {
     pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
         match self.stdin.write_all(b":show paths\n").await {
             Ok(_) => stdout.show_paths().await,
-            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-                Err(miette::miette!(
-                    "GHCi process stdin closed unexpectedly (broken pipe). \
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
                      This usually happens when GHCi crashes or exits unexpectedly."
-                )
-                .wrap_err(e))
-            }
+            )
+            .wrap_err(e)),
             Err(e) => Err(e).into_diagnostic(),
         }
     }
@@ -192,13 +188,11 @@ impl GhciStdin {
     ) -> miette::Result<ModuleSet> {
         match self.stdin.write_all(b":show targets\n").await {
             Ok(_) => stdout.show_targets(show_paths).await,
-            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-                Err(miette::miette!(
-                    "GHCi process stdin closed unexpectedly (broken pipe). \
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
                      This usually happens when GHCi crashes or exits unexpectedly."
-                )
-                .wrap_err(e))
-            }
+            )
+            .wrap_err(e)),
             Err(e) => Err(e).into_diagnostic(),
         }
     }
@@ -211,13 +205,11 @@ impl GhciStdin {
     ) -> miette::Result<ModuleSet> {
         match self.stdin.write_all(b":show modules\n").await {
             Ok(_) => stdout.show_modules(show_paths).await,
-            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-                Err(miette::miette!(
-                    "GHCi process stdin closed unexpectedly (broken pipe). \
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
                      This usually happens when GHCi crashes or exits unexpectedly."
-                )
-                .wrap_err(e))
-            }
+            )
+            .wrap_err(e)),
             Err(e) => Err(e).into_diagnostic(),
         }
     }
@@ -282,4 +274,3 @@ mod tests {
         assert_ne!(other_error.kind(), io::ErrorKind::BrokenPipe);
     }
 }
-
