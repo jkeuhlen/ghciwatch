@@ -323,6 +323,55 @@ fn generate_compilation_output(modules: usize) -> String {
     output
 }
 
+fn bench_real_incremental_read_with_ansi(c: &mut Criterion) {
+    let mut group = c.benchmark_group("real_incremental_read_ansi");
+
+    // Configure for consistent results
+    group.warm_up_time(std::time::Duration::from_secs(2));
+    group.measurement_time(std::time::Duration::from_secs(3));
+    group.sample_size(50);
+
+    // Simulate a real GHCi session with ANSI codes (like hspec output)
+    group.bench_function("hspec_session_with_ansi", |b| {
+        b.iter(|| {
+            // This simulates the performance-critical path: reading output with ANSI codes
+            // line by line until we hit a prompt
+            let mut line = String::new();
+            let mut line_stripped = String::new();
+            let mut line_stripped_valid = false;
+
+            // Simulate processing output with ANSI codes, checking for prompt on each character
+            let data = "\x1b[32mTest 1\x1b[0m\n\x1b[31mTest 2\x1b[0m\n\x1b[0mghci> ";
+
+            for ch in data.chars() {
+                line.push(ch);
+                line_stripped_valid = false;
+
+                // This simulates checking for prompt multiple times as we read
+                // (the optimization we implemented)
+                if !line.ends_with('\n') {
+                    // Check if line starts with prompt (uses cached stripped version)
+                    if !line_stripped_valid {
+                        line_stripped.clear();
+                        line_stripped.push_str(&strip_ansi_escapes::strip_str(&line));
+                        line_stripped_valid = true;
+                    }
+                    let _has_prompt = line_stripped.starts_with("ghci> ");
+                }
+
+                if ch == '\n' {
+                    line.clear();
+                    line_stripped_valid = false;
+                }
+            }
+
+            black_box(line.len())
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_ansi_stripping_hotpath(c: &mut Criterion) {
     let mut group = c.benchmark_group("ansi_stripping_hotpath");
 
@@ -389,6 +438,7 @@ criterion_group!(
     bench_utf8_handling,
     bench_pattern_searching,
     bench_real_world_scenarios,
+    bench_real_incremental_read_with_ansi,
     bench_ansi_stripping_hotpath
 );
 criterion_main!(benches);
