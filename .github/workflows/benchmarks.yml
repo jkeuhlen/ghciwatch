@@ -151,10 +151,20 @@ jobs:
           cargo bench --bench eval_parsing        -- --save-baseline main
           cargo bench --bench tui_rendering       -- --save-baseline main
 
+      - name: Preserve baseline
+        run: |
+          mkdir -p /tmp/criterion-baseline
+          cp -r target/criterion /tmp/criterion-baseline/
+
       # Switch to the PR revision
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Restore baseline
+        run: |
+          mkdir -p target
+          cp -r /tmp/criterion-baseline/criterion target/
 
       - name: Run comparison against baseline
         run: |
