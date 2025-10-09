@@ -38,6 +38,10 @@ pub struct IncrementalReader<R, W> {
     lines: String,
     /// The line currently being written to.
     line: String,
+    /// Cached ANSI-stripped version of `line`. Only valid when `line_stripped_valid` is true.
+    line_stripped: String,
+    /// Whether `line_stripped` contains the current stripped version of `line`.
+    line_stripped_valid: bool,
     /// We're not guaranteed that the data we read at one time is aligned on a UTF-8 boundary. If
     /// that's the case, we store the data here until we get more data.
     non_utf8: Vec<u8>,
@@ -55,6 +59,8 @@ where
             writer: None,
             lines: String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
             line: String::with_capacity(LINE_BUFFER_CAPACITY),
+            line_stripped: String::with_capacity(LINE_BUFFER_CAPACITY),
+            line_stripped_valid: false,
             non_utf8: Vec::with_capacity(SPLIT_UTF8_CODEPOINT_CAPACITY),
         }
     }
@@ -66,6 +72,21 @@ where
             writer: Some(Box::pin(writer)),
             ..self
         }
+    }
+
+    /// Get the ANSI-stripped version of the current line, using the cache if valid.
+    fn get_stripped_line(&mut self) -> &str {
+        if !self.line_stripped_valid {
+            self.line_stripped.clear();
+            self.line_stripped.push_str(&strip_ansi_escapes::strip_str(&self.line));
+            self.line_stripped_valid = true;
+        }
+        &self.line_stripped
+    }
+
+    /// Invalidate the stripped line cache. Call this whenever `self.line` is modified.
+    fn invalidate_stripped_cache(&mut self) {
+        self.line_stripped_valid = false;
     }
 
     /// Read from the contained reader until a line beginning with one of the `end_marker` patterns
@@ -182,6 +203,7 @@ where
                 None => {
                     // No newline, just append to the current line.
                     self.line.push_str(data);
+                    self.invalidate_stripped_cache();
 
                     // If we don't have a chunk to return yet, check for an `end_marker`.
                     ret = match ret {
@@ -191,9 +213,11 @@ where
                             // marker matching. This is because hspec is a naughty
                             // library and outputs "\n\x1b[0mMARKER" which is really
                             // rude of it imo.
-                            let stripped = strip_ansi_escapes::strip_str(&self.line);
+                            //
+                            // OPTIMIZATION: Use cached stripped version to avoid repeated allocations.
+                            let stripped = self.get_stripped_line();
 
-                            match opts.find(opts.end_marker, &stripped) {
+                            match opts.find(opts.end_marker, stripped) {
                                 Some(_match) => {
                                     // If we found an `end_marker` in `self.line`, our chunk is
                                     // `self.lines`.
@@ -211,6 +235,7 @@ where
                 Some((first_line, rest)) => {
                     // Add the rest of the first line to the current line.
                     self.line.push_str(first_line);
+                    self.invalidate_stripped_cache();
 
                     ret = match ret {
                         Some(lines) => {
@@ -265,6 +290,7 @@ where
         }
 
         self.line.clear();
+        self.invalidate_stripped_cache();
         Ok(std::mem::replace(
             &mut self.lines,
             String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
@@ -287,6 +313,7 @@ where
         }
 
         let line = std::mem::replace(&mut self.line, String::with_capacity(LINE_BUFFER_CAPACITY));
+        self.invalidate_stripped_cache();
         tracing::debug!(line, "Read line");
         self.lines.push_str(&line);
         self.lines.push('\n');
@@ -334,6 +361,7 @@ where
                 String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
             );
             self.line.clear();
+            self.invalidate_stripped_cache();
             return Some(chunk);
         }
 
@@ -345,6 +373,7 @@ where
     async fn push_to_buffer(&mut self, data: &str) {
         for span in data.line_spans() {
             self.line.push_str(span.as_str());
+            self.invalidate_stripped_cache();
             if !span.ending_str().is_empty() {
                 self.finish_line(WriteBehavior::Write).await.unwrap();
             }
@@ -896,5 +925,198 @@ b"~###",
         utf8_boundary([b"\xc1\nghci> "], "�\n").await;
         utf8_boundary([b"\xf5\nghci> "], "�\n").await;
         utf8_boundary([b"\xff\nghci> "], "�\n").await;
+    }
+
+    /// Test that ANSI stripping is cached correctly when reading incrementally
+    #[tokio::test]
+    async fn test_ansi_stripping_cache_basic() {
+        let fake_reader = FakeReader::with_byte_chunks([
+            b"Normal line\n",
+            b"Line with ",
+            b"\x1b[32mcolor\x1b[0m\n",
+            b"\x1b[0mghci> ",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "Normal line\nLine with \x1b[32mcolor\x1b[0m\n");
+    }
+
+    /// Test that ANSI codes at the start of the prompt are correctly handled with caching
+    #[tokio::test]
+    async fn test_ansi_stripping_cache_hspec_case() {
+        // This is the actual case that prompted the optimization:
+        // hspec outputs "\n\x1b[0mMARKER" which is really rude
+        let fake_reader = FakeReader::with_byte_chunks([
+            b"Some output\n",
+            b"\x1b[0m",
+            b"ghci> ",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "Some output\n");
+    }
+
+    /// Test that cache is properly invalidated when line content changes
+    #[tokio::test]
+    async fn test_ansi_stripping_cache_invalidation() {
+        let fake_reader = FakeReader::with_byte_chunks([
+            b"First ",
+            b"part\n",
+            b"\x1b[31mSecond ",
+            b"part\x1b[0m\n",
+            b"ghci> ",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "First part\n\x1b[31mSecond part\x1b[0m\n");
+    }
+
+    /// Test that multiple prompt checks on the same line only strip once
+    #[tokio::test]
+    async fn test_ansi_stripping_cache_reuse() {
+        // Simulate reading a line in small chunks - each chunk should trigger
+        // a prompt check, but we should only strip ANSI once
+        let fake_reader = FakeReader::with_byte_chunks([
+            b"Line ",
+            b"with ",
+            b"\x1b[32m",
+            b"multiple ",
+            b"\x1b[0m",
+            b"chunks\n",
+            b"ghci> ",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "Line with \x1b[32mmultiple \x1b[0mchunks\n");
+    }
+
+    /// Test that cache works correctly across multiple read_until calls
+    #[tokio::test]
+    async fn test_ansi_stripping_cache_multiple_reads() {
+        let fake_reader = FakeReader::with_byte_chunks([
+            b"\x1b[32mFirst\x1b[0m\nghci> ",
+            b"\x1b[31mSecond\x1b[0m\nghci> ",
+            b"Third\nghci> ",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        // First read
+        let result1 = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result1, "\x1b[32mFirst\x1b[0m\n");
+
+        // Second read
+        let result2 = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result2, "\x1b[31mSecond\x1b[0m\n");
+
+        // Third read
+        let result3 = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result3, "Third\n");
+    }
+
+    /// Test that heavy ANSI codes are handled correctly with caching
+    #[tokio::test]
+    async fn test_ansi_stripping_cache_heavy_ansi() {
+        let fake_reader = FakeReader::with_byte_chunks([
+            b"\x1b[1;31m\x1b[47m",
+            b"Bold red on white",
+            b"\x1b[0m",
+            b"\n",
+            b"ghci> ",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "\x1b[1;31m\x1b[47mBold red on white\x1b[0m\n");
     }
 }
