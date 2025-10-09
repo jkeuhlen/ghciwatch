@@ -323,12 +323,72 @@ fn generate_compilation_output(modules: usize) -> String {
     output
 }
 
+fn bench_ansi_stripping_hotpath(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ansi_stripping_hotpath");
+
+    // Configure for consistent results
+    group.warm_up_time(std::time::Duration::from_secs(2));
+    group.measurement_time(std::time::Duration::from_secs(3));
+    group.sample_size(100);
+
+    // Simulate the hot path: checking incomplete lines for prompt markers
+    let test_cases = vec![
+        ("no_ansi", "Line 42: Some compilation output here"),
+        (
+            "light_ansi",
+            "Line 42: Some \x1b[32mcompilation\x1b[0m output here",
+        ),
+        ("ansi_at_end", "Line 42: Some output\x1b[0m"),
+        ("hspec_case", "\x1b[0mghci> "), // The actual problem case
+        (
+            "heavy_ansi",
+            "\x1b[1;31m\x1b[47mLine 42:\x1b[0m \x1b[1mSome output\x1b[0m",
+        ),
+    ];
+
+    for (name, line) in test_cases {
+        group.bench_function(format!("naive_strip_each_read/{}", name), |b| {
+            b.iter(|| {
+                // Old approach: Strip ANSI on every check
+                // This simulates reading a line incrementally with 10 partial reads
+                for _ in 0..10 {
+                    let stripped = strip_ansi_escapes::strip_str(line);
+                    let has_prompt = stripped.starts_with("ghci> ");
+                    black_box(has_prompt);
+                }
+            });
+        });
+
+        group.bench_function(format!("cached_strip_once/{}", name), |b| {
+            b.iter(|| {
+                // New approach: Strip once, cache result
+                // This simulates the same 10 checks but only stripping once
+                let mut cache = String::new();
+                let mut cache_valid = false;
+
+                for _ in 0..10 {
+                    if !cache_valid {
+                        cache.clear();
+                        cache.push_str(&strip_ansi_escapes::strip_str(line));
+                        cache_valid = true;
+                    }
+                    let has_prompt = cache.starts_with("ghci> ");
+                    black_box(has_prompt);
+                }
+            });
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_stream_processing,
     bench_buffer_operations,
     bench_utf8_handling,
     bench_pattern_searching,
-    bench_real_world_scenarios
+    bench_real_world_scenarios,
+    bench_ansi_stripping_hotpath
 );
 criterion_main!(benches);
