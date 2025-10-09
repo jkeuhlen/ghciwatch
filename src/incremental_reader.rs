@@ -78,7 +78,8 @@ where
     fn get_stripped_line(&mut self) -> &str {
         if !self.line_stripped_valid {
             self.line_stripped.clear();
-            self.line_stripped.push_str(&strip_ansi_escapes::strip_str(&self.line));
+            self.line_stripped
+                .push_str(&strip_ansi_escapes::strip_str(&self.line));
             self.line_stripped_valid = true;
         }
         &self.line_stripped
@@ -959,11 +960,7 @@ b"~###",
     async fn test_ansi_stripping_cache_hspec_case() {
         // This is the actual case that prompted the optimization:
         // hspec outputs "\n\x1b[0mMARKER" which is really rude
-        let fake_reader = FakeReader::with_byte_chunks([
-            b"Some output\n",
-            b"\x1b[0m",
-            b"ghci> ",
-        ]);
+        let fake_reader = FakeReader::with_byte_chunks([b"Some output\n", b"\x1b[0m", b"ghci> "]);
 
         let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
         let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);

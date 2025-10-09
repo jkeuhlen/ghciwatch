@@ -334,14 +334,20 @@ fn bench_ansi_stripping_hotpath(c: &mut Criterion) {
     // Simulate the hot path: checking incomplete lines for prompt markers
     let test_cases = vec![
         ("no_ansi", "Line 42: Some compilation output here"),
-        ("light_ansi", "Line 42: Some \x1b[32mcompilation\x1b[0m output here"),
+        (
+            "light_ansi",
+            "Line 42: Some \x1b[32mcompilation\x1b[0m output here",
+        ),
         ("ansi_at_end", "Line 42: Some output\x1b[0m"),
-        ("hspec_case", "\x1b[0mghci> "),  // The actual problem case
-        ("heavy_ansi", "\x1b[1;31m\x1b[47mLine 42:\x1b[0m \x1b[1mSome output\x1b[0m"),
+        ("hspec_case", "\x1b[0mghci> "), // The actual problem case
+        (
+            "heavy_ansi",
+            "\x1b[1;31m\x1b[47mLine 42:\x1b[0m \x1b[1mSome output\x1b[0m",
+        ),
     ];
 
     for (name, line) in test_cases {
-        group.bench_function(&format!("naive_strip_each_read/{}", name), |b| {
+        group.bench_function(format!("naive_strip_each_read/{}", name), |b| {
             b.iter(|| {
                 // Old approach: Strip ANSI on every check
                 // This simulates reading a line incrementally with 10 partial reads
@@ -353,7 +359,7 @@ fn bench_ansi_stripping_hotpath(c: &mut Criterion) {
             });
         });
 
-        group.bench_function(&format!("cached_strip_once/{}", name), |b| {
+        group.bench_function(format!("cached_strip_once/{}", name), |b| {
             b.iter(|| {
                 // New approach: Strip once, cache result
                 // This simulates the same 10 checks but only stripping once
