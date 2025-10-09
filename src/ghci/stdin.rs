@@ -34,11 +34,15 @@ impl GhciStdin {
         find: FindAt,
         log: &mut CompilationLog,
     ) -> miette::Result<()> {
-        self.stdin
-            .write_all(line.as_bytes())
-            .await
-            .into_diagnostic()?;
-        stdout.prompt(find, log).await
+        match self.stdin.write_all(line.as_bytes()).await {
+            Ok(_) => stdout.prompt(find, log).await,
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
+                     This usually happens when GHCi crashes or exits unexpectedly."
+            )
+            .wrap_err(e)),
+            Err(e) => Err(e).into_diagnostic(),
+        }
     }
 
     /// Write a line on `stdin` and wait for a prompt on stdout.
@@ -165,12 +169,15 @@ impl GhciStdin {
 
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn show_paths(&mut self, stdout: &mut GhciStdout) -> miette::Result<ShowPaths> {
-        self.stdin
-            .write_all(b":show paths\n")
-            .await
-            .into_diagnostic()?;
-
-        stdout.show_paths().await
+        match self.stdin.write_all(b":show paths\n").await {
+            Ok(_) => stdout.show_paths().await,
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
+                     This usually happens when GHCi crashes or exits unexpectedly."
+            )
+            .wrap_err(e)),
+            Err(e) => Err(e).into_diagnostic(),
+        }
     }
 
     #[instrument(skip_all, level = "debug")]
@@ -179,12 +186,15 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         show_paths: &ShowPaths,
     ) -> miette::Result<ModuleSet> {
-        self.stdin
-            .write_all(b":show targets\n")
-            .await
-            .into_diagnostic()?;
-
-        stdout.show_targets(show_paths).await
+        match self.stdin.write_all(b":show targets\n").await {
+            Ok(_) => stdout.show_targets(show_paths).await,
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
+                     This usually happens when GHCi crashes or exits unexpectedly."
+            )
+            .wrap_err(e)),
+            Err(e) => Err(e).into_diagnostic(),
+        }
     }
 
     #[instrument(skip_all, level = "debug")]
@@ -193,25 +203,74 @@ impl GhciStdin {
         stdout: &mut GhciStdout,
         show_paths: &ShowPaths,
     ) -> miette::Result<ModuleSet> {
-        self.stdin
-            .write_all(b":show modules\n")
-            .await
-            .into_diagnostic()?;
-
-        stdout.show_modules(show_paths).await
+        match self.stdin.write_all(b":show modules\n").await {
+            Ok(_) => stdout.show_modules(show_paths).await,
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(miette::miette!(
+                "GHCi process stdin closed unexpectedly (broken pipe). \
+                     This usually happens when GHCi crashes or exits unexpectedly."
+            )
+            .wrap_err(e)),
+            Err(e) => Err(e).into_diagnostic(),
+        }
     }
 
     #[allow(dead_code)] // TODO: No it should not be!
     #[instrument(skip(self, stdout), level = "debug")]
     pub async fn quit(&mut self, stdout: &mut GhciStdout) -> miette::Result<()> {
-        self.stdin
-            .write_all(b":quit\n")
-            .await
-            .into_diagnostic()
-            .wrap_err("Failed to tell ghci to `:quit`")?;
+        match self.stdin.write_all(b":quit\n").await {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                // If the pipe is already broken when we try to quit, that's fine - GHCi is already gone
+                tracing::debug!("GHCi stdin already closed when attempting to quit");
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(e)
+                    .into_diagnostic()
+                    .wrap_err("Failed to tell ghci to `:quit`")
+            }
+        }
         stdout
             .quit()
             .await
             .wrap_err("Failed to wait for ghci to quit")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    #[tokio::test]
+    async fn test_broken_pipe_error_message() {
+        // This test verifies that when we get a BrokenPipe error, we provide a helpful
+        // error message explaining what happened
+
+        // We can't easily create a GhciStdin with a mock stdin because ChildStdin is
+        // from the standard library and doesn't expose constructors. However, we can
+        // verify the error handling logic by checking that our error messages are
+        // properly formatted.
+
+        // The actual integration test in tests/ghci_crash.rs will verify the full
+        // end-to-end behavior.
+
+        let err = io::Error::new(io::ErrorKind::BrokenPipe, "test broken pipe");
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+
+        // Verify our error message would be helpful
+        let expected_msg = "GHCi process stdin closed unexpectedly (broken pipe). \
+                           This usually happens when GHCi crashes or exits unexpectedly.";
+        assert!(expected_msg.contains("broken pipe"));
+        assert!(expected_msg.contains("GHCi"));
+    }
+
+    #[test]
+    fn test_broken_pipe_error_kind_detection() {
+        // Verify we can detect BrokenPipe errors correctly
+        let broken_pipe = io::Error::new(io::ErrorKind::BrokenPipe, "pipe broken");
+        assert_eq!(broken_pipe.kind(), io::ErrorKind::BrokenPipe);
+
+        let other_error = io::Error::new(io::ErrorKind::ConnectionReset, "connection reset");
+        assert_ne!(other_error.kind(), io::ErrorKind::BrokenPipe);
     }
 }

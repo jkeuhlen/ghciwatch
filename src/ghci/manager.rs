@@ -158,8 +158,43 @@ pub async fn run_ghci(
                 }
             }
             ret = &mut task => {
-                ret.into_diagnostic()??;
-                tracing::debug!("Finished dispatching ghci event");
+                // ret is Result<Result<(), miette::Error>, JoinError>
+                // First unwrap the JoinError
+                let dispatch_result = ret.into_diagnostic()?;
+                // Now handle the inner Result from dispatch
+                match dispatch_result {
+                    Ok(_) => {
+                        tracing::debug!("Finished dispatching ghci event");
+                    }
+                    Err(e) => {
+                        // Check if this is a broken pipe error, which indicates GHCi crashed
+                        let is_broken_pipe = e
+                            .chain()
+                            .any(|e| {
+                                e.to_string().contains("broken pipe") ||
+                                e.downcast_ref::<std::io::Error>()
+                                    .map(|io_err| io_err.kind() == std::io::ErrorKind::BrokenPipe)
+                                    .unwrap_or(false)
+                            });
+
+                        if is_broken_pipe {
+                            tracing::error!("GHCi process crashed (broken pipe). Attempting to restart...");
+                            // Attempt to restart GHCi
+                            match ghci.lock().await.restart().await {
+                                Ok(_) => {
+                                    tracing::info!("Successfully restarted GHCi after crash");
+                                    // Continue the loop to handle any pending events
+                                }
+                                Err(restart_err) => {
+                                    return Err(restart_err).wrap_err("Failed to restart GHCi after crash");
+                                }
+                            }
+                        } else {
+                            // For other errors, propagate them
+                            return Err(e);
+                        }
+                    }
+                }
             }
         }
     }
