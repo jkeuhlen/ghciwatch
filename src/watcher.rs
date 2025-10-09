@@ -91,28 +91,23 @@ async fn run_debouncer<T: notify::Watcher>(
     )
     .into_diagnostic()?;
 
-    {
-        let watcher = debouncer.watcher();
-        for path in &opts.watch {
-            watcher
-                .watch(path.as_std_path(), RecursiveMode::Recursive)
-                .map_err(|err| match err {
-                    notify::Error {
-                        kind: notify::ErrorKind::Io(e),
-                        ..
-                    } if e.kind() == std::io::ErrorKind::NotFound => {
-                        miette!(
-                            "Cannot watch path that doesn't exist: {:?}",
-                            path.absolute()
-                        )
-                    }
-                    err => miette!("{err}"),
-                })?;
-        }
-        let mut cache = debouncer.cache();
-        for path in &opts.watch {
-            cache.add_root(path.as_std_path(), RecursiveMode::Recursive);
-        }
+    // In notify-debouncer-full 0.4+, the debouncer provides watch methods directly
+    // and manages root paths automatically
+    for path in &opts.watch {
+        debouncer
+            .watch(path.as_std_path(), RecursiveMode::Recursive)
+            .map_err(|err| match err {
+                notify::Error {
+                    kind: notify::ErrorKind::Io(e),
+                    ..
+                } if e.kind() == std::io::ErrorKind::NotFound => {
+                    miette!(
+                        "Cannot watch path that doesn't exist: {:?}",
+                        path.absolute()
+                    )
+                }
+                err => miette!("{err}"),
+            })?;
     }
 
     tracing::debug!("notify watcher started");
