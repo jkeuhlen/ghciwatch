@@ -294,10 +294,13 @@ where
 
         self.line.clear();
         self.invalidate_stripped_cache();
-        Ok(std::mem::replace(
-            &mut self.lines,
-            String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
-        ))
+        // Optimization: Instead of always allocating a fresh String with the full capacity,
+        // take the existing string, return it, and leave an empty String behind.
+        // When the returned String is dropped by the caller after use, if it's the right size,
+        // it could be reused by the allocator. More importantly, if self.lines is already
+        // empty or small, we avoid allocating the full 1MB capacity unnecessarily.
+        let ret = std::mem::take(&mut self.lines);
+        Ok(ret)
     }
 
     /// Add `self.line` to `self.lines`, replacing `self.line` with an empty buffer.
@@ -315,11 +318,14 @@ where
             }
         }
 
-        let line = std::mem::replace(&mut self.line, String::with_capacity(LINE_BUFFER_CAPACITY));
-        self.invalidate_stripped_cache();
-        tracing::debug!(line, "Read line");
-        self.lines.push_str(&line);
+        // Optimization: Instead of creating a temporary String by replacing self.line,
+        // directly append self.line to self.lines and then clear it. This avoids an
+        // allocation and a copy operation on the hot path.
+        tracing::debug!(line = self.line.as_str(), "Read line");
+        self.lines.push_str(&self.line);
         self.lines.push('\n');
+        self.line.clear();
+        self.invalidate_stripped_cache();
 
         Ok(())
     }
@@ -361,10 +367,8 @@ where
         // OPTIMIZATION: Use cached stripped version to avoid repeated allocations.
         let stripped = self.get_stripped_line();
         if opts.find(opts.end_marker, stripped).is_some() {
-            let chunk = std::mem::replace(
-                &mut self.lines,
-                String::with_capacity(VEC_BUFFER_CAPACITY * LINE_BUFFER_CAPACITY),
-            );
+            // Optimization: Use std::mem::take to avoid allocating a new String.
+            let chunk = std::mem::take(&mut self.lines);
             self.line.clear();
             self.invalidate_stripped_cache();
             return Some(chunk);
@@ -1119,5 +1123,88 @@ b"~###",
             .unwrap();
 
         assert_eq!(result, "\x1b[1;31m\x1b[47mBold red on white\x1b[0m\n");
+    }
+
+    /// Test that the optimization preserves correct behavior across multiple read cycles.
+    /// This validates that buffer reuse (via clear() instead of replace()) works correctly.
+    #[tokio::test]
+    async fn test_buffer_reuse_across_multiple_reads() {
+        let fake_reader = FakeReader::with_byte_chunks([
+            b"First chunk\nghci> ",
+            b"Second chunk with longer text\nghci> ",
+            b"Third\nghci> ",
+        ]);
+
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        // First read - exercises finish_line() and take_lines()
+        let result1 = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result1, "First chunk\n");
+
+        // Second read - ensures buffers were properly cleared and reused
+        let result2 = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result2, "Second chunk with longer text\n");
+
+        // Third read - confirms no accumulated state from previous reads
+        let result3 = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result3, "Third\n");
+    }
+
+    /// Test that take_chunk_from_buffer correctly handles the optimized mem::take pattern
+    #[tokio::test]
+    async fn test_chunk_from_buffer_with_empty_line() {
+        let fake_reader = FakeReader::default();
+        let mut reader = IncrementalReader::new(fake_reader).with_writer(tokio::io::sink());
+
+        // Add data to buffer with end marker at start of current line (not in lines)
+        reader
+            .push_to_buffer("Some accumulated data\nMore data\n")
+            .await;
+        // Manually set the current line to the end marker (simulating incremental read)
+        reader.line.push_str("ghci> ");
+        reader.invalidate_stripped_cache();
+
+        let end_marker = AhoCorasick::from_anchored_patterns(["ghci> "]);
+        let mut buffer = vec![0; LINE_BUFFER_CAPACITY];
+
+        // This exercises the take_chunk_from_buffer path with the optimized mem::take
+        let result = reader
+            .read_until(&mut ReadOpts {
+                end_marker: &end_marker,
+                find: FindAt::LineStart,
+                writing: WriteBehavior::Hide,
+                buffer: &mut buffer,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "Some accumulated data\nMore data\n");
+        assert_eq!(reader.buffer(), String::new());
     }
 }
