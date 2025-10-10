@@ -338,30 +338,30 @@ fn bench_real_incremental_read_with_ansi(c: &mut Criterion) {
             // line by line until we hit a prompt
             let mut line = String::new();
             let mut line_stripped = String::new();
-            let mut line_stripped_valid = false;
+            let mut _line_stripped_valid = false;
 
             // Simulate processing output with ANSI codes, checking for prompt on each character
             let data = "\x1b[32mTest 1\x1b[0m\n\x1b[31mTest 2\x1b[0m\n\x1b[0mghci> ";
 
             for ch in data.chars() {
                 line.push(ch);
-                line_stripped_valid = false;
+                _line_stripped_valid = false;
 
                 // This simulates checking for prompt multiple times as we read
                 // (the optimization we implemented)
                 if !line.ends_with('\n') {
                     // Check if line starts with prompt (uses cached stripped version)
-                    if !line_stripped_valid {
+                    if !_line_stripped_valid {
                         line_stripped.clear();
                         line_stripped.push_str(&strip_ansi_escapes::strip_str(&line));
-                        line_stripped_valid = true;
+                        _line_stripped_valid = true;
                     }
                     let _has_prompt = line_stripped.starts_with("ghci> ");
                 }
 
                 if ch == '\n' {
                     line.clear();
-                    line_stripped_valid = false;
+                    _line_stripped_valid = false;
                 }
             }
 
