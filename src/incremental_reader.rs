@@ -248,7 +248,9 @@ where
                         }
                         None => {
                             // We don't have a chunk to return yet, so check for an `end_marker`.
-                            match opts.find(opts.end_marker, &self.line) {
+                            // OPTIMIZATION: Use cached stripped version to avoid repeated allocations.
+                            let stripped = self.get_stripped_line();
+                            match opts.find(opts.end_marker, stripped) {
                                 Some(_match) => {
                                     // If we found an `end_marker` in `self.line`, our chunk is
                                     // `self.lines`.
@@ -362,7 +364,9 @@ where
         }
 
         // Does the current line in `self.line` start with `end_marker`?
-        if opts.find(opts.end_marker, &self.line).is_some() {
+        // OPTIMIZATION: Use cached stripped version to avoid repeated allocations.
+        let stripped = self.get_stripped_line();
+        if opts.find(opts.end_marker, stripped).is_some() {
             // Optimization: Use std::mem::take to avoid allocating a new String.
             let chunk = std::mem::take(&mut self.lines);
             self.line.clear();
