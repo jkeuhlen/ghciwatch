@@ -38,7 +38,7 @@ The TUI includes a customizable action bar at the bottom of the screen with keyb
 
 The TUI includes three built-in actions:
 
-1. **Reload All** (key `1`) - Reloads all files that have changed in git:
+1. **Reload Changed Files** (key `1`) - Reloads all files that have changed in git:
    ```bash
    cd "$(git rev-parse --show-toplevel)" && git diff --name-only | xargs -r touch
    ```
@@ -132,8 +132,8 @@ The TUI uses minimal screen space:
 │  (scrollable area)                                  │
 │                                                     │
 ├─────────────────────────────────────────────────────┤
-│ [1] Reload All | [2] Toggle Warnings | [a] hide |  │
-│ [q] quit                                            │
+│ [1] Reload Changed Files | [2] Toggle Warnings |    │
+│ [a] hide | [q] quit                                 │
 └─────────────────────────────────────────────────────┘
 ```
 
