@@ -55,6 +55,8 @@ use crate::normal_path::NormalPath;
     override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]",
     disable_version_flag = true
 )]
+#[non_exhaustive]
+#[allow(clippy::manual_non_exhaustive)]
 pub struct Opts {
     /// Print version information
     #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
