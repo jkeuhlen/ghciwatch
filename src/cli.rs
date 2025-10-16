@@ -52,9 +52,16 @@ use crate::normal_path::NormalPath;
     author,
     verbatim_doc_comment,
     max_term_width = 100,
-    override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]"
+    override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]",
+    disable_version_flag = true
 )]
+#[non_exhaustive]
+#[allow(clippy::manual_non_exhaustive)]
 pub struct Opts {
+    /// Print version information
+    #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
+    version: (),
+
     /// A shell command which starts a GHCi REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
     /// This is used to launch the underlying GHCi session that `ghciwatch` controls.
@@ -100,7 +107,7 @@ pub struct Opts {
     pub no_interrupt_reloads: bool,
 
     /// Enable TUI mode (experimental).
-    #[arg(long, hide = true)]
+    #[arg(long, hide = true, env = "GHCIWATCH_TUI")]
     pub tui: bool,
 
     /// Options for TUI mode.
@@ -267,7 +274,7 @@ pub struct TuiOpts {
     /// Format: `LABEL:SHELL_COMMAND`. The label will be shown in the TUI, and the shell command
     /// will be executed when the action is triggered using number keys (1-9).
     ///
-    /// Example: `--tui-action "Reload All:git diff --name-only | xargs touch"`
+    /// Example: `--tui-action "Reload Changed Files:git diff --name-only | xargs touch"`
     ///
     /// Can be given multiple times (up to 9 actions).
     #[arg(long = "tui-action", value_name = "LABEL:SHELL_COMMAND")]
@@ -307,10 +314,10 @@ pub enum TuiActionCommand {
 }
 
 impl TuiAction {
-    /// The default "Reload All" action.
+    /// The default "Reload Changed Files" action.
     pub fn default_reload_all() -> Self {
         Self {
-            label: "Reload All".to_string(),
+            label: "Reload Changed Files".to_string(),
             // Run from git root to ensure paths are correct
             command: TuiActionCommand::Shell(
                 "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch"
@@ -384,10 +391,10 @@ mod tests {
 
     #[test]
     fn test_tui_action_from_str_valid() {
-        let action: TuiAction = "Reload All:git diff --name-only | xargs touch"
+        let action: TuiAction = "Reload Changed Files:git diff --name-only | xargs touch"
             .parse()
             .unwrap();
-        assert_eq!(action.label, "Reload All");
+        assert_eq!(action.label, "Reload Changed Files");
         assert!(matches!(
             action.command,
             TuiActionCommand::Shell(ref cmd) if cmd == "git diff --name-only | xargs touch"
@@ -436,7 +443,7 @@ mod tests {
     #[test]
     fn test_tui_action_default_reload_all() {
         let action = TuiAction::default_reload_all();
-        assert_eq!(action.label, "Reload All");
+        assert_eq!(action.label, "Reload Changed Files");
         assert!(matches!(
             action.command,
             TuiActionCommand::Shell(ref cmd) if cmd == "cd \"$(git rev-parse --show-toplevel)\" && git diff --name-only | xargs -r touch"
@@ -468,7 +475,7 @@ mod tests {
         let opts = TuiOpts::default();
         let actions = opts.get_actions();
         assert_eq!(actions.len(), 3);
-        assert_eq!(actions[0].label, "Reload All");
+        assert_eq!(actions[0].label, "Reload Changed Files");
         assert_eq!(actions[1].label, "Toggle Warnings");
         assert_eq!(actions[2].label, "Toggle No-Load");
     }
@@ -483,7 +490,7 @@ mod tests {
         };
         let actions = opts.get_actions();
         assert_eq!(actions.len(), 5);
-        assert_eq!(actions[0].label, "Reload All");
+        assert_eq!(actions[0].label, "Reload Changed Files");
         assert_eq!(actions[1].label, "Toggle Warnings");
         assert_eq!(actions[2].label, "Toggle No-Load");
         assert_eq!(actions[3].label, "Custom 1");
