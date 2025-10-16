@@ -282,6 +282,9 @@ when source files change.</p>
 </dl>
 <h2 id="options"><a class="header" href="#options">Options</a></h2>
 <dl>
+<dt><a id="-v" href="cli.html#-v"><code>-v</code></a><a id="--version" href="cli.html#--version"><code>--version</code></a></dt><dd>
+<p>Print version information</p>
+</dd>
 <dt><a id="--command" href="cli.html#--command"><code>--command &lt;SHELL_COMMAND&gt;</code></a></dt><dd>
 <p>A shell command which starts a GHCi REPL, e.g. <code>ghci</code> or <code>cabal v2-repl</code> or similar.</p>
 <p>This is used to launch the underlying GHCi session that <code>ghciwatch</code> controls.</p>
@@ -312,7 +315,7 @@ when source files change.</p>
 <dt><a id="--tui-action" href="cli.html#--tui-action"><code>--tui-action &lt;LABEL:SHELL_COMMAND&gt;</code></a></dt><dd>
 <p>Define custom actions for TUI mode.</p>
 <p>Format: <code>LABEL:SHELL_COMMAND</code>. The label will be shown in the TUI, and the shell command will be executed when the action is triggered using number keys (1-9).</p>
-<p>Example: <code>--tui-action "Reload All:git diff --name-only | xargs touch"</code></p>
+<p>Example: <code>--tui-action "Reload Changed Files:git diff --name-only | xargs touch"</code></p>
 <p>Can be given multiple times (up to 9 actions).</p>
 </dd>
 <dt><a id="--track-warnings" href="cli.html#--track-warnings"><code>--track-warnings</code></a></dt><dd>
