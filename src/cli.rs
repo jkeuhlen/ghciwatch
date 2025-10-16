@@ -52,9 +52,14 @@ use crate::normal_path::NormalPath;
     author,
     verbatim_doc_comment,
     max_term_width = 100,
-    override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]"
+    override_usage = "ghciwatch [--command SHELL_COMMAND] [--watch PATH] [OPTIONS ...]",
+    disable_version_flag = true
 )]
 pub struct Opts {
+    /// Print version information
+    #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
+    version: (),
+
     /// A shell command which starts a GHCi REPL, e.g. `ghci` or `cabal v2-repl` or similar.
     ///
     /// This is used to launch the underlying GHCi session that `ghciwatch` controls.
@@ -100,7 +105,7 @@ pub struct Opts {
     pub no_interrupt_reloads: bool,
 
     /// Enable TUI mode (experimental).
-    #[arg(long, hide = true)]
+    #[arg(long, hide = true, env = "GHCIWATCH_TUI")]
     pub tui: bool,
 
     /// Options for TUI mode.

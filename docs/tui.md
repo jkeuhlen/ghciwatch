@@ -12,6 +12,15 @@ Start ghciwatch with the `--tui` flag:
 ghciwatch --tui
 ```
 
+Or set the `GHCIWATCH_TUI` environment variable:
+
+```bash
+export GHCIWATCH_TUI=true
+ghciwatch
+```
+
+You can add this to your shell configuration (e.g., `~/.zshrc` or `~/.bashrc`) to enable TUI mode by default.
+
 ## Features
 
 ### Interactive Display
