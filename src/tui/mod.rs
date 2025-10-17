@@ -37,6 +37,10 @@ struct TuiState {
     debug: bool,
     quit: bool,
     scrollback: Vec<u8>,
+    /// Cached parsed text from scrollback. Only valid when scrollback_dirty is false.
+    cached_text: Option<ratatui::text::Text<'static>>,
+    /// Whether the scrollback has changed since we last parsed it.
+    scrollback_dirty: bool,
     line_count: Saturating<usize>,
     scroll_offset: Saturating<usize>,
     actions: Vec<TuiAction>,
@@ -50,6 +54,8 @@ impl TuiState {
             debug: false,
             quit: false,
             scrollback: Vec::with_capacity(TUI_SCROLLBACK_CAPACITY),
+            cached_text: None,
+            scrollback_dirty: true,
             line_count: Saturating(1),
             scroll_offset: Saturating(0),
             actions,
@@ -59,7 +65,7 @@ impl TuiState {
     }
 
     #[instrument(level = "trace", skip_all)]
-    fn render_inner(&self, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
+    fn render_inner(&mut self, area: Rect, buffer: &mut Buffer) -> miette::Result<()> {
         if area.width == 0 || area.height == 0 {
             return Ok(());
         }
@@ -78,13 +84,23 @@ impl TuiState {
         ])
         .split(area);
 
-        let text = self.scrollback.into_text().into_diagnostic()?;
+        // Only parse the ANSI text if the scrollback has changed
+        if self.scrollback_dirty {
+            let text = self.scrollback.into_text().into_diagnostic()?;
+            self.cached_text = Some(text);
+            self.scrollback_dirty = false;
+        }
+
+        let text = self
+            .cached_text
+            .as_ref()
+            .expect("cached_text should be Some after parsing");
 
         let scroll_offset = u16::try_from(self.scroll_offset.0)
             .into_diagnostic()
             .wrap_err("Scroll offset doesn't fit into 16 bits")?;
 
-        Paragraph::new(text)
+        Paragraph::new(text.clone())
             .wrap(Wrap::default())
             .scroll((scroll_offset, 0))
             .render(areas[0], buffer);
@@ -195,22 +211,25 @@ impl Tui {
         self.scrollback.extend(line.into_bytes());
         self.scrollback.push(b'\n');
         self.line_count += Saturating(1);
+        self.scrollback_dirty = true;
         self.maybe_follow();
     }
 
     #[instrument(level = "trace", skip(self))]
     fn render(&mut self) -> miette::Result<()> {
         let mut render_result = Ok(());
+        let state = &mut self.state;
+        let size = &mut self.size;
         self.terminal
             .draw(|frame| {
-                self.size = frame.size();
+                *size = frame.size();
                 let buffer = frame.buffer_mut();
-                render_result = self.state.render_inner(self.size, buffer);
+                render_result = state.render_inner(*size, buffer);
             })
             .into_diagnostic()
             .wrap_err("Failed to draw to terminal")?;
 
-        Ok(())
+        render_result
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -316,10 +335,26 @@ pub async fn run_tui(
 
     tracing::warn!("`--tui` mode is experimental and may contain bugs or change drastically in future releases.");
 
+    // Maximum number of lines to batch before rendering.
+    // This prevents the TUI from rendering on every single line when GHCi outputs
+    // thousands of lines rapidly (e.g., during initial compilation of large projects).
+    // Batching reduces render overhead significantly while keeping the UI responsive.
+    const MAX_LINES_PER_BATCH: usize = 100;
+    let mut lines_since_render = 0;
+
     while !tui.quit {
-        tui.render()?;
+        // Render before waiting for the next event to ensure UI is up-to-date
+        if lines_since_render > 0 {
+            tui.render()?;
+            lines_since_render = 0;
+        } else {
+            // Initial render or when there are no pending lines
+            tui.render()?;
+        }
 
         tokio::select! {
+            biased; // Process in order: shutdown, then lines, then events
+
             _ = shutdown.on_shutdown_requested() => {
                 tui.quit = true;
             }
@@ -329,6 +364,28 @@ pub async fn run_tui(
                 match line {
                     Some(line) => {
                         tui.push_line(line);
+                        lines_since_render += 1;
+
+                        // Batch multiple lines: keep reading if more are immediately available
+                        while lines_since_render < MAX_LINES_PER_BATCH {
+                            match tokio::time::timeout(
+                                std::time::Duration::from_micros(100),
+                                ghci_reader.next_line()
+                            ).await {
+                                Ok(Ok(Some(line))) => {
+                                    tui.push_line(line);
+                                    lines_since_render += 1;
+                                }
+                                Ok(Ok(None)) => {
+                                    tui.quit = true;
+                                    break;
+                                }
+                                Ok(Err(e)) => {
+                                    return Err(e).into_diagnostic().wrap_err("Failed to read line from GHCI");
+                                }
+                                Err(_) => break, // Timeout - no more lines immediately available
+                            }
+                        }
                     },
                     None => {
                         tui.quit = true;
@@ -340,6 +397,25 @@ pub async fn run_tui(
                 let line = line.into_diagnostic().wrap_err("Failed to read line from tracing")?;
                 if let Some(line) = line {
                     tui.push_line(line);
+                    lines_since_render += 1;
+
+                    // Batch multiple lines: keep reading if more are immediately available
+                    while lines_since_render < MAX_LINES_PER_BATCH {
+                        match tokio::time::timeout(
+                            std::time::Duration::from_micros(100),
+                            tracing_reader.next_line()
+                        ).await {
+                            Ok(Ok(Some(line))) => {
+                                tui.push_line(line);
+                                lines_since_render += 1;
+                            }
+                            Ok(Ok(None)) => break,
+                            Ok(Err(e)) => {
+                                return Err(e).into_diagnostic().wrap_err("Failed to read line from tracing");
+                            }
+                            Err(_) => break, // Timeout - no more lines immediately available
+                        }
+                    }
                 }
             }
 

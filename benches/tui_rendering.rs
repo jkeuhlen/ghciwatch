@@ -332,12 +332,60 @@ fn bench_real_world_tui_scenarios(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_ansi_to_tui_conversion(c: &mut Criterion) {
+    use ansi_to_tui::IntoText;
+
+    let mut group = c.benchmark_group("ansi_to_tui_conversion");
+
+    // Configure for consistent results
+    group.warm_up_time(std::time::Duration::from_secs(2));
+    group.measurement_time(std::time::Duration::from_secs(5));
+    group.sample_size(50);
+
+    // Test various buffer sizes that represent real-world scenarios
+    let test_cases = vec![
+        ("small_100_lines", 100),
+        ("medium_1000_lines", 1000),
+        ("large_5000_lines", 5000),
+        ("xlarge_10000_lines", 10000),
+    ];
+
+    for (name, line_count) in test_cases {
+        let output = generate_compilation_output(line_count, true);
+        let bytes = output.as_bytes();
+
+        group.throughput(Throughput::Bytes(bytes.len() as u64));
+
+        // Benchmark uncached conversion (worst case - every render)
+        group.bench_with_input(BenchmarkId::new("uncached", name), &bytes, |b, bytes| {
+            b.iter(|| {
+                // This is the exact operation that happens on every TUI render WITHOUT caching
+                let text = bytes.into_text().expect("Failed to convert ANSI to TUI");
+                black_box(text)
+            });
+        });
+
+        // Benchmark cached conversion (best case - rendering unchanged content)
+        group.bench_with_input(BenchmarkId::new("cached", name), &bytes, |b, bytes| {
+            // Pre-parse the text once
+            let cached_text = bytes.into_text().expect("Failed to convert ANSI to TUI");
+            b.iter(|| {
+                // This simulates rendering with a cached parse - just cloning the parsed structure
+                black_box(cached_text.clone())
+            });
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_ansi_processing,
     bench_scrollback_buffer,
     bench_text_formatting,
     bench_compilation_status,
-    bench_real_world_tui_scenarios
+    bench_real_world_tui_scenarios,
+    bench_ansi_to_tui_conversion
 );
 criterion_main!(benches);
