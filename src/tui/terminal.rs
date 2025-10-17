@@ -75,7 +75,6 @@ pub fn enter() -> miette::Result<TerminalGuard> {
         stdout,
         terminal::EnterAlternateScreen,
         cursor::Hide,
-        event::EnableMouseCapture,
         event::EnableFocusChange,
         event::EnableBracketedPaste,
         event::PushKeyboardEnhancementFlags(
@@ -118,7 +117,6 @@ pub fn exit() -> miette::Result<()> {
         event::PopKeyboardEnhancementFlags,
         event::DisableBracketedPaste,
         event::DisableFocusChange,
-        event::DisableMouseCapture,
         cursor::Show,
         terminal::LeaveAlternateScreen,
     )

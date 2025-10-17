@@ -28,7 +28,8 @@ You can add this to your shell configuration (e.g., `~/.zshrc` or `~/.bashrc`) t
 The TUI provides a clean, scrollable view of GHCi output with:
 - Real-time compilation results
 - Vim-style navigation (`j`/`k` to scroll, `g`/`G` to jump to top/bottom)
-- Scroll with mouse wheel or `Ctrl+u`/`Ctrl+d`
+- Arrow keys and Page Up/Down also supported
+- Terminal copy/paste support (mouse capture disabled)
 
 ### User-Configurable Actions
 
@@ -101,15 +102,14 @@ Actions are defined as `LABEL:COMMAND` where COMMAND can be:
 ### Keyboard Shortcuts
 
 #### Navigation
-- `j` - Scroll down one line
-- `k` - Scroll up one line
+- `j` / `↓` - Scroll down one line
+- `k` / `↑` - Scroll up one line
 - `g` - Jump to top
 - `G` (Shift+g) - Jump to bottom
-- `Ctrl+u` - Scroll up half a screen
-- `Ctrl+d` - Scroll down half a screen
+- `Ctrl+u` / `Page Up` - Scroll up half a screen
+- `Ctrl+d` / `Page Down` - Scroll down half a screen
 - `Ctrl+e` - Scroll down one line (alternative)
 - `Ctrl+y` - Scroll up one line (alternative)
-- Mouse wheel - Scroll up/down
 
 #### Actions
 - `1-9` - Trigger the corresponding action

@@ -6,7 +6,6 @@ use crossterm::event::Event;
 use crossterm::event::EventStream;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
-use crossterm::event::MouseEventKind;
 use miette::miette;
 use miette::IntoDiagnostic;
 use miette::WrapErr;
@@ -31,9 +30,6 @@ use crate::cli::{TuiAction, TuiActionCommand};
 use crate::ghci::manager::{InternalCommand, WatcherEvent};
 use crate::ShutdownHandle;
 use terminal::TerminalGuard;
-
-/// Default amount to scroll on mouse wheel events.
-const SCROLL_AMOUNT: usize = 3;
 
 /// State data for drawing the TUI.
 #[derive(Debug)]
@@ -221,21 +217,20 @@ impl Tui {
     async fn handle_event(&mut self, event: Event) -> miette::Result<()> {
         // TODO: Steal Evan's declarative key matching macros?
         // https://github.com/evanrelf/indigo/blob/7a5e8e47291585cae03cdf5a7c47ad3bcd8db3e6/crates/indigo-tui/src/key/macros.rs
-        match event {
-            Event::Mouse(mouse) => match mouse.kind {
-                MouseEventKind::ScrollUp => self.scroll_up(SCROLL_AMOUNT),
-                MouseEventKind::ScrollDown => self.scroll_down(SCROLL_AMOUNT),
-                _ => {}
-            },
-            Event::Key(key) => match (key.modifiers, key.code) {
-                (KeyModifiers::NONE, KeyCode::Char('j')) => self.scroll_down(1),
-                (KeyModifiers::NONE, KeyCode::Char('k')) => self.scroll_up(1),
+        if let Event::Key(key) = event {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+                    self.scroll_down(1)
+                }
+                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+                    self.scroll_up(1)
+                }
                 (KeyModifiers::NONE, KeyCode::Char('g')) => self.scroll_to(0),
                 (KeyModifiers::SHIFT, KeyCode::Char('g' | 'G')) => self.scroll_to(usize::MAX),
-                (KeyModifiers::CONTROL, KeyCode::Char('u')) => self.scroll_up(self.half_height().0),
-                (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
-                    self.scroll_down(self.half_height().0)
-                }
+                (KeyModifiers::CONTROL, KeyCode::Char('u'))
+                | (KeyModifiers::NONE, KeyCode::PageUp) => self.scroll_up(self.half_height().0),
+                (KeyModifiers::CONTROL, KeyCode::Char('d'))
+                | (KeyModifiers::NONE, KeyCode::PageDown) => self.scroll_down(self.half_height().0),
                 (KeyModifiers::CONTROL, KeyCode::Char('e')) => self.scroll_down(1),
                 (KeyModifiers::CONTROL, KeyCode::Char('y')) => self.scroll_up(1),
                 (KeyModifiers::CONTROL, KeyCode::Char('c')) => self.quit = true,
@@ -269,8 +264,7 @@ impl Tui {
                     }
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
 
         Ok(())
