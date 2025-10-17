@@ -357,31 +357,23 @@ fn bench_ansi_to_tui_conversion(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(bytes.len() as u64));
 
         // Benchmark uncached conversion (worst case - every render)
-        group.bench_with_input(
-            BenchmarkId::new("uncached", name),
-            &bytes,
-            |b, bytes| {
-                b.iter(|| {
-                    // This is the exact operation that happens on every TUI render WITHOUT caching
-                    let text = bytes.into_text().expect("Failed to convert ANSI to TUI");
-                    black_box(text)
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("uncached", name), &bytes, |b, bytes| {
+            b.iter(|| {
+                // This is the exact operation that happens on every TUI render WITHOUT caching
+                let text = bytes.into_text().expect("Failed to convert ANSI to TUI");
+                black_box(text)
+            });
+        });
 
         // Benchmark cached conversion (best case - rendering unchanged content)
-        group.bench_with_input(
-            BenchmarkId::new("cached", name),
-            &bytes,
-            |b, bytes| {
-                // Pre-parse the text once
-                let cached_text = bytes.into_text().expect("Failed to convert ANSI to TUI");
-                b.iter(|| {
-                    // This simulates rendering with a cached parse - just cloning the parsed structure
-                    black_box(cached_text.clone())
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("cached", name), &bytes, |b, bytes| {
+            // Pre-parse the text once
+            let cached_text = bytes.into_text().expect("Failed to convert ANSI to TUI");
+            b.iter(|| {
+                // This simulates rendering with a cached parse - just cloning the parsed structure
+                black_box(cached_text.clone())
+            });
+        });
     }
 
     group.finish();

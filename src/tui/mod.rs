@@ -91,7 +91,10 @@ impl TuiState {
             self.scrollback_dirty = false;
         }
 
-        let text = self.cached_text.as_ref().expect("cached_text should be Some after parsing");
+        let text = self
+            .cached_text
+            .as_ref()
+            .expect("cached_text should be Some after parsing");
 
         let scroll_offset = u16::try_from(self.scroll_offset.0)
             .into_diagnostic()
