@@ -23,11 +23,14 @@ use super::GhciReloadKind;
 
 /// An internal command that modifies ghciwatch runtime settings.
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum InternalCommand {
     /// Toggle warning tracking on/off.
     ToggleTrackWarnings,
     /// Toggle `--repl-no-load` flag in the GHCi command.
     ToggleNoLoad,
+    /// Toggle quiet stdout mode (suppress compilation progress output).
+    ToggleQuietStdout,
 }
 
 /// An event sent to [`Ghci`] by the watcher or TUI.
@@ -252,10 +255,18 @@ async fn dispatch(
                 InternalCommand::ToggleNoLoad => {
                     ghci.toggle_no_load().await?;
                 }
+                InternalCommand::ToggleQuietStdout => {
+                    ghci.toggle_quiet_stdout().await?;
+                }
             }
 
-            // Notify that we're done (triggers a restart)
-            let _ = reload_sender.send(GhciReloadKind::Restart);
+            // Notify that we're done (triggers a restart for ToggleNoLoad, None for others)
+            let restart_needed = matches!(command, InternalCommand::ToggleNoLoad);
+            let _ = reload_sender.send(if restart_needed {
+                GhciReloadKind::Restart
+            } else {
+                GhciReloadKind::None
+            });
         }
     }
     Ok(())

@@ -74,6 +74,11 @@ where
         }
     }
 
+    /// Update the writer for this reader. This allows changing where output is forwarded at runtime.
+    pub fn set_writer(&mut self, writer: W) {
+        self.writer = Some(Box::pin(writer));
+    }
+
     /// Get the ANSI-stripped version of the current line, using the cache if valid.
     fn get_stripped_line(&mut self) -> &str {
         if !self.line_stripped_valid {

@@ -282,6 +282,7 @@ impl Tui {
                 let internal_cmd = match cmd.as_str() {
                     "toggle-track-warnings" => InternalCommand::ToggleTrackWarnings,
                     "toggle-no-load" => InternalCommand::ToggleNoLoad,
+                    "toggle-quiet-stdout" => InternalCommand::ToggleQuietStdout,
                     _ => {
                         tracing::error!(%cmd, "Unknown internal command");
                         return Err(miette::miette!("Unknown internal command: {}", cmd));

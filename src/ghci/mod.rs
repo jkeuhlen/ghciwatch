@@ -129,6 +129,8 @@ pub struct GhciOpts {
     pub clear: bool,
     /// Whether to track warnings across recompilations.
     pub track_warnings: bool,
+    /// Whether to suppress GHCi stdout output (compilation progress messages).
+    pub quiet_stdout: bool,
 }
 
 impl GhciOpts {
@@ -156,7 +158,22 @@ impl GhciOpts {
         if opts.tui {
             let (tui_writer, tui_reader_inner) = tokio::io::duplex(GHCI_BUFFER_CAPACITY);
             let tui_writer = GhciWriter::duplex_stream(tui_writer);
-            stdout_writer = if let Some(ref output_path) = opts.output_file {
+            stdout_writer = if opts.quiet_stdout {
+                // In quiet mode, suppress stdout even in TUI
+                if let Some(ref output_path) = opts.output_file {
+                    let file = OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(output_path)
+                        .await
+                        .into_diagnostic()
+                        .wrap_err_with(|| format!("Failed to open output file: {}", output_path))?;
+                    GhciWriter::tee(GhciWriter::sink(), file)
+                } else {
+                    GhciWriter::sink()
+                }
+            } else if let Some(ref output_path) = opts.output_file {
                 let file = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -172,7 +189,22 @@ impl GhciOpts {
             stderr_writer = tui_writer.clone();
             tui_reader = Some(tui_reader_inner);
         } else {
-            stdout_writer = if let Some(ref output_path) = opts.output_file {
+            stdout_writer = if opts.quiet_stdout {
+                // In quiet mode, suppress stdout
+                if let Some(ref output_path) = opts.output_file {
+                    let file = OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(output_path)
+                        .await
+                        .into_diagnostic()
+                        .wrap_err_with(|| format!("Failed to open output file: {}", output_path))?;
+                    GhciWriter::tee(GhciWriter::sink(), file)
+                } else {
+                    GhciWriter::sink()
+                }
+            } else if let Some(ref output_path) = opts.output_file {
                 let file = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -202,6 +234,7 @@ impl GhciOpts {
                 stderr_writer,
                 clear: opts.clear,
                 track_warnings: opts.track_warnings,
+                quiet_stdout: opts.quiet_stdout,
             },
             tui_reader,
         ))
@@ -525,6 +558,17 @@ impl Ghci {
                 "Restarting ghci:\n{}",
                 format_bulleted_list(&actions.needs_restart)
             );
+            // Show status message in quiet mode
+            if self.opts.quiet_stdout {
+                use miette::IntoDiagnostic;
+                use tokio::io::AsyncWriteExt;
+                self.opts
+                    .stderr_writer
+                    .write_all(b"[ghciwatch] Restarting GHCi...\n")
+                    .await
+                    .into_diagnostic()
+                    .wrap_err("Failed to write status message")?;
+            }
             self.restart().await?;
             // Once we restart, everything is freshly loaded. We don't need to add or
             // reload any other modules.
@@ -535,6 +579,17 @@ impl Ghci {
 
         if actions.needs_modify() {
             self.opts.clear();
+            // Show status message in quiet mode
+            if self.opts.quiet_stdout {
+                use miette::IntoDiagnostic;
+                use tokio::io::AsyncWriteExt;
+                self.opts
+                    .stderr_writer
+                    .write_all(b"[ghciwatch] Reloading...\n")
+                    .await
+                    .into_diagnostic()
+                    .wrap_err("Failed to write status message")?;
+            }
             self.run_hooks(LifecycleEvent::Reload(hooks::When::Before), &mut log)
                 .await?;
         }
@@ -1079,6 +1134,49 @@ impl Ghci {
         Ok(())
     }
 
+    /// Toggle quiet stdout mode (suppress compilation progress output).
+    pub async fn toggle_quiet_stdout(&mut self) -> miette::Result<()> {
+        use miette::IntoDiagnostic;
+        use tokio::io::AsyncWriteExt;
+
+        self.opts.quiet_stdout = !self.opts.quiet_stdout;
+
+        let status = if self.opts.quiet_stdout {
+            "enabled"
+        } else {
+            "disabled"
+        };
+
+        tracing::info!("Quiet stdout mode {status}");
+
+        // Write status message to stderr (so it's visible even in quiet mode)
+        let message = format!(
+            "\n[ghciwatch] Quiet mode {status} (compilation progress output {})\n",
+            if self.opts.quiet_stdout {
+                "suppressed"
+            } else {
+                "shown"
+            }
+        );
+        self.opts
+            .stderr_writer
+            .write_all(message.as_bytes())
+            .await
+            .into_diagnostic()
+            .wrap_err("Failed to write status message")?;
+
+        // Update the stdout writer dynamically
+        if self.opts.quiet_stdout {
+            self.stdout.reader.set_writer(GhciWriter::sink());
+        } else {
+            self.stdout
+                .reader
+                .set_writer(self.opts.stdout_writer.clone());
+        }
+
+        Ok(())
+    }
+
     /// Make a path relative to the `ghci` session's current working directory.
     fn relative_path(&self, path: impl AsRef<Path>) -> miette::Result<NormalPath> {
         self.search_paths.make_relative(path)
@@ -1191,6 +1289,22 @@ impl Ghci {
                     event.event_noun(),
                     compilation_start.elapsed()
                 );
+            }
+
+            // Show completion status in quiet mode
+            if self.opts.quiet_stdout {
+                use miette::IntoDiagnostic;
+                use tokio::io::AsyncWriteExt;
+                let message = format!(
+                    "[ghciwatch] Compilation complete ({:.2?})\n",
+                    compilation_start.elapsed()
+                );
+                self.opts
+                    .stderr_writer
+                    .write_all(message.as_bytes())
+                    .await
+                    .into_diagnostic()
+                    .wrap_err("Failed to write status message")?;
             }
 
             // Run the eval commands, if any.

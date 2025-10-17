@@ -121,6 +121,14 @@ pub struct Opts {
     #[arg(long, env = "GHCIWATCH_TRACK_WARNINGS")]
     pub track_warnings: bool,
 
+    /// Suppress GHCi stdout output (compilation progress messages).
+    ///
+    /// When enabled, only diagnostics (errors and warnings) will be displayed.
+    /// This can improve performance for large projects with many modules.
+    /// Status messages will still be shown to indicate compilation progress.
+    #[arg(long, env = "GHCIWATCH_QUIET_STDOUT")]
+    pub quiet_stdout: bool,
+
     /// Generate Markdown CLI documentation.
     #[cfg(feature = "clap-markdown")]
     #[arg(long, hide = true)]
@@ -288,6 +296,7 @@ impl TuiOpts {
             TuiAction::default_reload_all(),
             TuiAction::default_toggle_warnings(),
             TuiAction::default_toggle_no_load(),
+            TuiAction::default_toggle_quiet_mode(),
         ];
         actions.extend(self.actions.clone());
         actions.truncate(9); // Maximum of 9 actions (keys 1-9)
@@ -339,6 +348,14 @@ impl TuiAction {
         Self {
             label: "Toggle No-Load".to_string(),
             command: TuiActionCommand::Internal("toggle-no-load".to_string()),
+        }
+    }
+
+    /// The default "Toggle Quiet Mode" action.
+    pub fn default_toggle_quiet_mode() -> Self {
+        Self {
+            label: "Toggle Quiet Mode".to_string(),
+            command: TuiActionCommand::Internal("toggle-quiet-stdout".to_string()),
         }
     }
 }
@@ -474,10 +491,11 @@ mod tests {
     fn test_tui_opts_get_actions_default_only() {
         let opts = TuiOpts::default();
         let actions = opts.get_actions();
-        assert_eq!(actions.len(), 3);
+        assert_eq!(actions.len(), 4);
         assert_eq!(actions[0].label, "Reload Changed Files");
         assert_eq!(actions[1].label, "Toggle Warnings");
         assert_eq!(actions[2].label, "Toggle No-Load");
+        assert_eq!(actions[3].label, "Toggle Quiet Mode");
     }
 
     #[test]
@@ -489,12 +507,13 @@ mod tests {
             ],
         };
         let actions = opts.get_actions();
-        assert_eq!(actions.len(), 5);
+        assert_eq!(actions.len(), 6);
         assert_eq!(actions[0].label, "Reload Changed Files");
         assert_eq!(actions[1].label, "Toggle Warnings");
         assert_eq!(actions[2].label, "Toggle No-Load");
-        assert_eq!(actions[3].label, "Custom 1");
-        assert_eq!(actions[4].label, "Custom 2");
+        assert_eq!(actions[3].label, "Toggle Quiet Mode");
+        assert_eq!(actions[4].label, "Custom 1");
+        assert_eq!(actions[5].label, "Custom 2");
     }
 
     #[test]
@@ -505,6 +524,6 @@ mod tests {
                 .collect(),
         };
         let actions = opts.get_actions();
-        assert_eq!(actions.len(), 9); // 3 default + 6 custom (truncated from 10)
+        assert_eq!(actions.len(), 9); // 4 default + 5 custom (truncated from 10)
     }
 }
